@@ -1,0 +1,26 @@
+{
+  "name": "repo-flightcheck",
+  "version": "0.1.0",
+  "description": "Audit whether a repository is truly ready for AI coding agents and human collaborators.",
+  "type": "module",
+  "bin": {
+    "repo-flightcheck": "./bin/repo-flightcheck.js"
+  },
+  "scripts": {
+    "build": "node ./scripts/build.js",
+    "lint": "node ./scripts/lint.js",
+    "scan": "node ./bin/repo-flightcheck.js .",
+    "scan:strict": "node ./bin/repo-flightcheck.js . --strict",
+    "test": "node --test"
+  },
+  "keywords": [
+    "ai",
+    "agents",
+    "codex",
+    "claude-code",
+    "github",
+    "repo-audit",
+    "verification"
+  ],
+  "license": "MIT"
+}
