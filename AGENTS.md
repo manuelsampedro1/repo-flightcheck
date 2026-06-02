@@ -17,3 +17,9 @@
 - Keep the CLI fast on medium repos.
 - Every new rule needs at least one test.
 - If a rule can false-positive on common repos, document the tradeoff in the README.
+
+## Verification
+- `node --test`
+- `node scripts/lint.js`
+- `node scripts/build.js`
+- `node bin/repo-flightcheck.js . --strict --threshold 80`

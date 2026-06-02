@@ -23,7 +23,7 @@ test("scores a healthy node repo well", () => {
     "README.md": "# Demo\n\n## Quickstart\nInstall it.\n\n## Usage\nRun it.\n",
     "LICENSE": "MIT",
     ".gitignore": ".env\nnode_modules\n",
-    "AGENTS.md": "# Rules\n",
+    "AGENTS.md": "# Agent Guide\n\n## Goal\nShip the demo.\n\n## Rules\nPrefer small changes.\n\n## Verification\nRun npm test.\n",
     "package.json": JSON.stringify({
       name: "demo",
       description: "demo repo",
@@ -44,6 +44,33 @@ test("scores a healthy node repo well", () => {
   assert.equal(report.summary.criticalFailures, 0);
   assert.ok(report.summary.score >= 90);
   assert.equal(report.checks.find((check) => check.id === "verification-command")?.status, "pass");
+});
+
+test("warns when agent instructions are too thin", () => {
+  const repoPath = writeRepo({
+    "README.md": "# Demo\n\n## Quickstart\nInstall it.\n\n## Usage\nRun it.\n",
+    "LICENSE": "MIT",
+    ".gitignore": ".env\n",
+    "AGENTS.md": "# Rules\n",
+    "package.json": JSON.stringify({
+      name: "demo",
+      description: "demo repo",
+      license: "MIT",
+      scripts: {
+        test: "node --test",
+        build: "node build.js",
+        lint: "node lint.js"
+      }
+    }),
+    ".github/workflows/ci.yml": "name: ci\n",
+    "fixtures/sample.txt": "hello"
+  });
+
+  const report = scanRepo(repoPath);
+  const check = report.checks.find((item) => item.id === "agent-instructions");
+
+  assert.equal(check?.status, "warn");
+  assert.match(check?.message ?? "", /missing/);
 });
 
 test("fails tracked env files and missing verification commands", () => {

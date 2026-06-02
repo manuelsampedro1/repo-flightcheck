@@ -119,6 +119,22 @@ function findAgentFile(repoPath) {
   return AGENT_FILES.find((entry) => exists(repoPath, entry)) ?? null;
 }
 
+function agentGuidanceStatus(agentText) {
+  const normalized = agentText.toLowerCase();
+  const hasGoal = /(goal|purpose|product|objective|mission|scope)/.test(normalized);
+  const hasConstraints = /(constraint|principle|rule|do not|avoid|prefer|must|quality)/.test(normalized);
+  const hasVerification = /(verify|verification|test|check|build|lint|ci|quality)/.test(normalized);
+
+  return {
+    ok: hasGoal && hasConstraints && hasVerification,
+    missing: [
+      hasGoal ? null : "goal or product scope",
+      hasConstraints ? null : "constraints or repo rules",
+      hasVerification ? null : "verification or quality commands"
+    ].filter(Boolean)
+  };
+}
+
 function findReadme(repoPath) {
   return README_FILES.find((entry) => exists(repoPath, entry)) ?? null;
 }
@@ -200,6 +216,8 @@ export function scanRepo(repoPath) {
   const readmeText = readmeFile ? readText(absolutePath, readmeFile) : "";
   const readmeGuidance = hasReadmeGuidance(readmeText);
   const agentFile = findAgentFile(absolutePath);
+  const agentText = agentFile ? readText(absolutePath, agentFile) : "";
+  const agentGuidance = agentGuidanceStatus(agentText);
   const licenseFile = findLicense(absolutePath);
   const workflowFiles = listWorkflowFiles(absolutePath);
   const exampleMaterial = findExampleMaterial(absolutePath);
@@ -243,8 +261,12 @@ export function scanRepo(repoPath) {
       id: "agent-instructions",
       title: "Agent instructions",
       severity: "high",
-      status: agentFile ? "pass" : "warn",
-      message: agentFile ? `Found ${agentFile}.` : "No AGENTS.md or equivalent agent guidance found.",
+      status: agentFile ? agentGuidance.ok ? "pass" : "warn" : "warn",
+      message: agentFile
+        ? agentGuidance.ok
+          ? `${agentFile} includes goal, constraints, and verification guidance.`
+          : `${agentFile} exists but is missing ${agentGuidance.missing.join(", ")}.`
+        : "No AGENTS.md or equivalent agent guidance found.",
       fix: "Add AGENTS.md with repo goals, constraints, verification commands, and commit expectations.",
       evidence: agentFile ? [agentFile] : []
     }),

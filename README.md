@@ -21,7 +21,7 @@ This CLI checks the basics that usually decide whether an agent session goes smo
 
 - `README.md` presence and whether it includes install/usage guidance.
 - `LICENSE` and `.gitignore`.
-- Agent instructions like `AGENTS.md` or `CLAUDE.md`.
+- Agent instructions like `AGENTS.md` or `CLAUDE.md`, including goal, constraints, and verification guidance.
 - Verification commands from `package.json`, `Makefile`, Python config, Rust, or Swift packages.
 - Build and lint coverage where the stack implies they should exist.
 - GitHub Actions workflows.
@@ -120,4 +120,5 @@ node bin/repo-flightcheck.js . --strict --threshold 80
 
 - It uses heuristics, not full semantic parsing.
 - Some repos intentionally skip build or lint steps; those show up as warnings, not always failures.
+- Agent-instruction quality is checked by keyword signals, so unusual but valid guidance may need clearer headings.
 - It inspects the working tree on disk, not remote GitHub settings like branch protection or repository visibility.
