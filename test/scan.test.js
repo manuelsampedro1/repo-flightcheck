@@ -350,6 +350,68 @@ test("detects standard-library Python unittest suites", () => {
   assert.equal(report.checks.find((item) => item.id === "documented-commands")?.status, "pass");
 });
 
+test("passes valid Python pyproject script entrypoints", () => {
+  const repoPath = writeRepo({
+    "README.md": "# Demo\n\n## Quickstart\nInstall with pip.\n\n## Usage\nRun demo.\n",
+    "LICENSE": "MIT",
+    ".gitignore": ".env\n",
+    "AGENTS.md": "# Agent Guide\n\n## Goal\nShip the demo.\n\n## Rules\nPrefer small changes.\n\n## Verification\nRun python3 -m unittest discover -s tests.\n",
+    "pyproject.toml": [
+      "[build-system]",
+      "requires = [\"setuptools>=77\"]",
+      "",
+      "[project]",
+      "name = \"demo\"",
+      "version = \"0.1.0\"",
+      "",
+      "[project.scripts]",
+      "demo = \"demo.cli:main\"",
+      "demo-admin = \"demo.admin:run\""
+    ].join("\n"),
+    "src/demo/cli.py": "def main():\n    return 0\n",
+    "src/demo/admin.py": "def run():\n    return 0\n",
+    ".github/workflows/ci.yml": "name: ci\njobs:\n  test:\n    steps:\n      - run: python3 -m unittest discover -s tests\n",
+    "tests/test_cli.py": "import unittest\n\nclass DemoTest(unittest.TestCase):\n    def test_demo(self):\n        self.assertTrue(True)\n"
+  });
+
+  const report = scanRepo(repoPath);
+  const check = report.checks.find((item) => item.id === "python-cli-entrypoint");
+
+  assert.equal(check?.status, "pass");
+  assert.equal(check?.message, "Validated 2 Python CLI entrypoints.");
+  assert.deepEqual(check?.evidence, ["demo: demo.cli:main", "demo-admin: demo.admin:run"]);
+});
+
+test("warns when Python pyproject script entrypoints are not importable", () => {
+  const repoPath = writeRepo({
+    "README.md": "# Demo\n\n## Quickstart\nInstall with pip.\n\n## Usage\nRun demo.\n",
+    "LICENSE": "MIT",
+    ".gitignore": ".env\n",
+    "AGENTS.md": "# Agent Guide\n\n## Goal\nShip the demo.\n\n## Rules\nPrefer small changes.\n\n## Verification\nRun python3 -m unittest discover -s tests.\n",
+    "pyproject.toml": [
+      "[project]",
+      "name = \"demo\"",
+      "version = \"0.1.0\"",
+      "",
+      "[project.scripts]",
+      "demo = \"demo.cli:main\"",
+      "missing = \"demo.missing:main\"",
+      "bad = \"not-a-callable\""
+    ].join("\n"),
+    "demo/cli.py": "def other():\n    return 0\n",
+    "tests/test_cli.py": "import unittest\n\nclass DemoTest(unittest.TestCase):\n    def test_demo(self):\n        self.assertTrue(True)\n"
+  });
+
+  const report = scanRepo(repoPath);
+  const check = report.checks.find((item) => item.id === "python-cli-entrypoint");
+
+  assert.equal(check?.status, "warn");
+  assert.match(check?.message ?? "", /3 Python CLI entrypoint issues/);
+  assert.ok(check?.evidence.includes("demo: demo/cli.py does not define main()"));
+  assert.ok(check?.evidence.includes("missing: missing Python module demo/missing.py or src/demo/missing.py"));
+  assert.ok(check?.evidence.includes("bad: not-a-callable should use module:function"));
+});
+
 test("detects dependency-light GitHub Action repos with Make verification", () => {
   const repoPath = writeRepo({
     "README.md": "# Deploy Gate\n\n## Quickstart\nNo package install is required.\n\n## Usage\nRun make test, make build, and make lint before release.\n",

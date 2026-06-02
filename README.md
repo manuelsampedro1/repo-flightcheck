@@ -30,6 +30,7 @@ This CLI checks the basics that usually decide whether an agent session goes smo
 - Whether CI appears to run the same verification command expected locally.
 - Whether documented README or agent commands map to actual scripts, Make targets, or stack commands.
 - Whether Node CLI `package.json` `bin` entrypoints point to executable Node scripts.
+- Whether Python CLI `pyproject.toml` `[project.scripts]` entrypoints point to existing modules and defined functions.
 - Git working-tree cleanliness before handing work to an agent.
 - Tracked `.env` files and whether `.env` is ignored.
 - Example or fixture material that makes the repo feel real.
@@ -75,7 +76,7 @@ From `node bin/repo-flightcheck.js fixtures/sample-repo` with the local fixture 
 
 ```text
 repo-flightcheck :: fixtures/sample-repo
-Score: 51/100
+Score: 57/100
 Stack: generic
 
 WARN  README guidance              README exists but is missing clear installation or usage guidance.
@@ -93,6 +94,7 @@ WARN  Secret hygiene               No tracked env files found, but .env is not e
 WARN  Examples or fixtures         No examples, demo, or fixtures folder found.
 PASS  Package metadata             No package.json present, so package metadata is not required.
 PASS  Node CLI entrypoint          No package.json bin entrypoints declared.
+PASS  Python CLI entrypoint        No pyproject [project.scripts] entrypoints declared.
 
 Next fixes:
 1. README guidance: Add a README with setup, usage, and a short explanation of why the project matters.
@@ -142,6 +144,7 @@ node bin/repo-flightcheck.js . --strict --threshold 80
 - Stack detection is intentionally shallow; JavaScript actions with `package.json` report as Node, while dependency-light composite actions can report as `github-action`.
 - Documented command validation is heuristic and only checks common package-manager, Make, Python test-runner, and stack test commands in README or agent guidance.
 - Node CLI entrypoint validation checks local `package.json` `bin` targets for file presence, a Node shebang, and POSIX executability; Windows-only packaging may need a documented exception.
+- Python CLI entrypoint validation checks simple `pyproject.toml` `[project.scripts]` targets shaped as `module:function` in root or `src/` layouts; dynamic TOML, generated modules, or class-based callables may need a documented exception.
 - It inspects the working tree on disk, not remote GitHub settings like branch protection or repository visibility.
 - The working-tree check uses local Git status. A dirty parent repo can affect scans of subdirectories inside that repo.
 - The agent-readiness contract is a compact view of the same heuristic checks, not a substitute for review or domain-specific acceptance criteria.

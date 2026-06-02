@@ -490,6 +490,102 @@ function nodeCliEntrypointStatus(repoPath, packageJson) {
   };
 }
 
+function parsePyprojectScripts(pyproject) {
+  const scripts = [];
+  let inProjectScripts = false;
+
+  for (const rawLine of pyproject.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) {
+      continue;
+    }
+
+    const heading = line.match(/^\[([^\]]+)\]$/);
+    if (heading) {
+      inProjectScripts = heading[1].trim() === "project.scripts";
+      continue;
+    }
+
+    if (!inProjectScripts) {
+      continue;
+    }
+
+    const match = line.match(/^([A-Za-z0-9_.-]+)\s*=\s*["']([^"']+)["']/);
+    if (match) {
+      scripts.push([match[1], match[2].trim()]);
+    }
+  }
+
+  return scripts;
+}
+
+function pythonModuleCandidates(moduleName) {
+  const modulePath = moduleName.replace(/\./g, "/");
+  return [
+    `${modulePath}.py`,
+    path.join(modulePath, "__init__.py"),
+    path.join("src", `${modulePath}.py`),
+    path.join("src", modulePath, "__init__.py")
+  ];
+}
+
+function pythonFunctionExists(repoPath, relativePath, functionName) {
+  const content = readText(repoPath, relativePath);
+  const escaped = functionName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`^\\s*def\\s+${escaped}\\s*\\(`, "m").test(content);
+}
+
+function pythonCliEntrypointStatus(repoPath, pyproject) {
+  const entries = parsePyprojectScripts(pyproject);
+  if (entries.length === 0) {
+    return {
+      ok: true,
+      message: "No pyproject [project.scripts] entrypoints declared.",
+      evidence: []
+    };
+  }
+
+  const problems = [];
+  const evidence = [];
+
+  for (const [name, target] of entries) {
+    const [moduleName, callableName, extra] = target.split(":");
+    if (!moduleName || !callableName || extra !== undefined) {
+      problems.push(`${name}: ${target} should use module:function`);
+      continue;
+    }
+
+    const candidates = pythonModuleCandidates(moduleName);
+    const modulePath = candidates.find((candidate) => exists(repoPath, candidate));
+    if (!modulePath) {
+      problems.push(`${name}: missing Python module ${candidates[0]} or ${candidates[2]}`);
+      continue;
+    }
+
+    const functionName = callableName.split(".")[0];
+    if (!pythonFunctionExists(repoPath, modulePath, functionName)) {
+      problems.push(`${name}: ${modulePath} does not define ${functionName}()`);
+      continue;
+    }
+
+    evidence.push(`${name}: ${target}`);
+  }
+
+  if (problems.length > 0) {
+    return {
+      ok: false,
+      message: `Found ${problems.length} Python CLI entrypoint issue${problems.length === 1 ? "" : "s"}.`,
+      evidence: problems
+    };
+  }
+
+  return {
+    ok: true,
+    message: `Validated ${entries.length} Python CLI entrypoint${entries.length === 1 ? "" : "s"}.`,
+    evidence
+  };
+}
+
 function ciVerificationStatus(repoPath, workflowFiles, commandCandidates) {
   if (workflowFiles.length === 0) {
     return {
@@ -644,6 +740,7 @@ export function scanRepo(repoPath) {
   const ciVerification = ciVerificationStatus(absolutePath, workflowFiles, verificationCandidates);
   const documentedCommands = documentedCommandStatus(absolutePath, stack, packageJson);
   const nodeCliEntrypoint = nodeCliEntrypointStatus(absolutePath, packageJson);
+  const pythonCliEntrypoint = pythonCliEntrypointStatus(absolutePath, readText(absolutePath, "pyproject.toml"));
 
   const checks = [
     makeCheck({
@@ -794,6 +891,15 @@ export function scanRepo(repoPath) {
       message: nodeCliEntrypoint.message,
       fix: "Make every package.json bin target point to an executable Node script with a shebang.",
       evidence: nodeCliEntrypoint.evidence
+    }),
+    makeCheck({
+      id: "python-cli-entrypoint",
+      title: "Python CLI entrypoint",
+      severity: "medium",
+      status: pythonCliEntrypoint.ok ? "pass" : "warn",
+      message: pythonCliEntrypoint.message,
+      fix: "Make every pyproject [project.scripts] entrypoint point to an importable module and defined function.",
+      evidence: pythonCliEntrypoint.evidence
     })
   ];
 
