@@ -22,6 +22,7 @@ This CLI checks the basics that usually decide whether an agent session goes smo
 - `README.md` presence and whether it includes install/usage guidance.
 - `LICENSE` and `.gitignore`.
 - Agent instructions like `AGENTS.md` or `CLAUDE.md`, including goal, constraints, and verification guidance.
+- Optional task contracts like `AGENT_TASK.md`, including objective, acceptance criteria, context, constraints, expected changes, verification, risks, and out-of-scope boundaries.
 - Verification commands from `package.json`, `Makefile`, Python config, Rust, or Swift packages.
 - Build and lint coverage where the stack implies they should exist.
 - Whether the local environment has the tools required by detected verification, build, and lint commands.
@@ -151,6 +152,7 @@ node bin/repo-flightcheck.js . --strict --threshold 80
 - It uses heuristics, not full semantic parsing.
 - Some repos intentionally skip build or lint steps; those show up as warnings, not always failures.
 - Agent-instruction quality is checked by keyword signals, so unusual but valid guidance may need clearer headings.
+- Task-contract validation only runs when `AGENT_TASK.md` or `TASK_CONTRACT.md` exists; missing task contracts do not penalize general repo readiness.
 - Stack detection is intentionally shallow; JavaScript actions with `package.json` report as Node, while dependency-light composite actions can report as `github-action`.
 - Documented command validation is heuristic and only checks common package-manager, Make, Python test-runner, and stack test commands in README or agent guidance.
 - Tool availability checks the current `PATH`; CI containers, local shells, and Codex desktop sessions can legitimately differ.

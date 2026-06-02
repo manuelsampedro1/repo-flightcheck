@@ -243,6 +243,79 @@ test("warns when agent instructions are too thin", () => {
   assert.match(check?.message ?? "", /missing/);
 });
 
+test("passes a complete agent task contract when present", () => {
+  const repoPath = writeRepo({
+    "README.md": "# Demo\n\n## Quickstart\nInstall it.\n\n## Usage\nRun it.\n",
+    "AGENT_TASK.md": [
+      "# Agent Task Contract",
+      "",
+      "## Objective",
+      "Add a concrete, dependency-free repo readiness check before agent work starts.",
+      "",
+      "## Acceptance Criteria",
+      "- The checker reports pass for a complete contract.",
+      "- Incomplete contracts show actionable warnings.",
+      "",
+      "## Context",
+      "The repo is used before Codex or another coding agent edits local files.",
+      "",
+      "## Constraints",
+      "- Keep the validation local-first and dependency-free.",
+      "",
+      "## Expected Changes",
+      "- Update the scanner and unit tests.",
+      "",
+      "## Verification",
+      "- `node --test`",
+      "- `node scripts/lint.js`",
+      "",
+      "## Risks",
+      "- The check could become too strict for small tasks.",
+      "",
+      "## Out of Scope",
+      "- Do not build a hosted task-management workflow.",
+      ""
+    ].join("\n")
+  });
+
+  const check = scanRepo(repoPath).checks.find((item) => item.id === "task-contract");
+
+  assert.equal(check?.status, "pass");
+  assert.equal(
+    check?.message,
+    "AGENT_TASK.md includes objective, acceptance criteria, constraints, verification, risks, and out-of-scope boundaries."
+  );
+  assert.deepEqual(check?.evidence, ["AGENT_TASK.md"]);
+});
+
+test("warns when an agent task contract is incomplete", () => {
+  const repoPath = writeRepo({
+    "README.md": "# Demo\n\n## Quickstart\nInstall it.\n\n## Usage\nRun it.\n",
+    "AGENT_TASK.md": [
+      "# Agent Task Contract",
+      "",
+      "## Objective",
+      "TBD",
+      "",
+      "## Acceptance Criteria",
+      "- It works.",
+      "",
+      "## Verification",
+      "Look at it.",
+      ""
+    ].join("\n")
+  });
+
+  const check = scanRepo(repoPath).checks.find((item) => item.id === "task-contract");
+
+  assert.equal(check?.status, "warn");
+  assert.match(check?.message ?? "", /^AGENT_TASK\.md has \d+ task contract issues\.$/);
+  assert.ok(check?.evidence.includes("AGENT_TASK.md: Objective is too short"));
+  assert.ok(check?.evidence.includes("AGENT_TASK.md: Objective still looks like placeholder text"));
+  assert.ok(check?.evidence.includes("AGENT_TASK.md: missing Context"));
+  assert.equal(check?.evidence.length, 8);
+});
+
 test("warns when CI does not run the detected verification command", () => {
   const repoPath = writeRepo({
     "README.md": "# Demo\n\n## Quickstart\nInstall it.\n\n## Usage\nRun it.\n",

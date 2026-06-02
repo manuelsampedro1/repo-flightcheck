@@ -3,6 +3,27 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 
 const AGENT_FILES = ["AGENTS.md", "CLAUDE.md", "GEMINI.md", "CURSOR.md"];
+const TASK_CONTRACT_FILES = ["AGENT_TASK.md", "TASK_CONTRACT.md"];
+const TASK_CONTRACT_SECTIONS = [
+  "Objective",
+  "Acceptance Criteria",
+  "Context",
+  "Constraints",
+  "Expected Changes",
+  "Verification",
+  "Risks",
+  "Out of Scope"
+];
+const TASK_CONTRACT_PLACEHOLDERS = [
+  /\btbd\b/i,
+  /\btodo\b/i,
+  /\bplaceholder\b/i,
+  /\bfill this\b/i,
+  /\bto be defined\b/i,
+  /\bstate the\b/i,
+  /\bexplain the\b/i,
+  /\bname the\b/i
+];
 const README_FILES = ["README.md", "readme.md"];
 const LICENSE_FILES = ["LICENSE", "LICENSE.md", "LICENSE.txt"];
 const ENV_FILES = [".env", ".env.local", ".env.production", ".env.development", ".env.test"];
@@ -358,6 +379,105 @@ function verificationCommandCandidates(commands, packageJson) {
 
 function findAgentFile(repoPath) {
   return AGENT_FILES.find((entry) => exists(repoPath, entry)) ?? null;
+}
+
+function findTaskContractFile(repoPath) {
+  return TASK_CONTRACT_FILES.find((entry) => exists(repoPath, entry)) ?? null;
+}
+
+function markdownSections(markdown) {
+  const sections = {};
+  let current = null;
+
+  for (const line of markdown.split(/\r?\n/)) {
+    const match = line.match(/^##\s+(.+?)\s*$/);
+    if (match) {
+      current = match[1].trim();
+      sections[current] ||= [];
+      continue;
+    }
+    if (current) {
+      sections[current].push(line);
+    }
+  }
+
+  return Object.fromEntries(
+    Object.entries(sections).map(([name, lines]) => [name, lines.join("\n").trim()])
+  );
+}
+
+function markdownBulletCount(text) {
+  return text.split(/\r?\n/).filter((line) => /^\s*[-*]\s+\S+/.test(line)).length;
+}
+
+function hasTaskContractPlaceholder(text) {
+  return TASK_CONTRACT_PLACEHOLDERS.some((pattern) => pattern.test(text));
+}
+
+function hasTaskContractVerification(text) {
+  const lowered = text.toLowerCase();
+  return text.includes("`") || /(test|build|lint|check|review|verify|manual)/.test(lowered);
+}
+
+function taskContractStatus(repoPath) {
+  const taskFile = findTaskContractFile(repoPath);
+  if (!taskFile) {
+    return {
+      ok: true,
+      message: "No AGENT_TASK.md found; task-specific contract is optional.",
+      evidence: []
+    };
+  }
+
+  const sections = markdownSections(readText(repoPath, taskFile));
+  const issues = [];
+
+  for (const section of TASK_CONTRACT_SECTIONS) {
+    const content = sections[section] ?? "";
+    if (!content) {
+      issues.push(`missing ${section}`);
+      continue;
+    }
+    if (content.length < 24) {
+      issues.push(`${section} is too short`);
+    }
+    if (hasTaskContractPlaceholder(content)) {
+      issues.push(`${section} still looks like placeholder text`);
+    }
+  }
+
+  if ((sections["Acceptance Criteria"] ?? "") && markdownBulletCount(sections["Acceptance Criteria"]) < 2) {
+    issues.push("Acceptance Criteria needs at least two concrete bullets");
+  }
+  if ((sections["Constraints"] ?? "") && markdownBulletCount(sections["Constraints"]) < 1) {
+    issues.push("Constraints needs at least one explicit boundary");
+  }
+  if ((sections["Expected Changes"] ?? "") && markdownBulletCount(sections["Expected Changes"]) < 1) {
+    issues.push("Expected Changes should name likely files, modules, or artifacts");
+  }
+  if ((sections["Verification"] ?? "") && !hasTaskContractVerification(sections["Verification"])) {
+    issues.push("Verification needs a command or concrete manual check");
+  }
+  if ((sections["Risks"] ?? "") && markdownBulletCount(sections["Risks"]) < 1) {
+    issues.push("Risks should list at least one failure mode");
+  }
+  if ((sections["Out of Scope"] ?? "") && markdownBulletCount(sections["Out of Scope"]) < 1) {
+    issues.push("Out of Scope should list tempting work to exclude");
+  }
+
+  if (issues.length === 0) {
+    return {
+      ok: true,
+      message: `${taskFile} includes objective, acceptance criteria, constraints, verification, risks, and out-of-scope boundaries.`,
+      evidence: [taskFile]
+    };
+  }
+
+  return {
+    ok: false,
+    message: `${taskFile} has ${issues.length} task contract issue${issues.length === 1 ? "" : "s"}.`,
+    evidence: issues.slice(0, 8).map((issue) => `${taskFile}: ${issue}`)
+  };
 }
 
 function agentGuidanceStatus(agentText) {
@@ -1046,6 +1166,7 @@ export function scanRepo(repoPath, options = {}) {
   const agentFile = findAgentFile(absolutePath);
   const agentText = agentFile ? readText(absolutePath, agentFile) : "";
   const agentGuidance = agentGuidanceStatus(agentText);
+  const taskContract = taskContractStatus(absolutePath);
   const licenseFile = findLicense(absolutePath);
   const workflowFiles = listWorkflowFiles(absolutePath);
   const exampleMaterial = findExampleMaterial(absolutePath);
@@ -1105,6 +1226,15 @@ export function scanRepo(repoPath, options = {}) {
         : "No AGENTS.md or equivalent agent guidance found.",
       fix: "Add AGENTS.md with repo goals, constraints, verification commands, and commit expectations.",
       evidence: agentFile ? [agentFile] : []
+    }),
+    makeCheck({
+      id: "task-contract",
+      title: "Task contract",
+      severity: "medium",
+      status: taskContract.ok ? "pass" : "warn",
+      message: taskContract.message,
+      fix: "Use AGENT_TASK.md to declare objective, acceptance criteria, context, constraints, expected changes, verification, risks, and out-of-scope work before starting an agent run.",
+      evidence: taskContract.evidence
     }),
     makeCheck({
       id: "verification-command",
