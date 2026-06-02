@@ -6,6 +6,7 @@ const AGENT_FILES = ["AGENTS.md", "CLAUDE.md", "GEMINI.md", "CURSOR.md"];
 const README_FILES = ["README.md", "readme.md"];
 const LICENSE_FILES = ["LICENSE", "LICENSE.md", "LICENSE.txt"];
 const ENV_FILES = [".env", ".env.local", ".env.production", ".env.development", ".env.test"];
+const DOCUMENTED_COMMAND_FILES = [...README_FILES, ...AGENT_FILES];
 
 const SCORE_WEIGHTS = {
   critical: 18,
@@ -83,6 +84,72 @@ function parseMakeTargets(repoPath) {
   }
   const content = readText(repoPath, "Makefile");
   return Array.from(content.matchAll(/^([a-zA-Z0-9._-]+):/gm), ([, target]) => target);
+}
+
+function extractDocumentedCommands(text) {
+  const commands = new Set();
+  const patterns = [
+    /\bnpm\s+(?:run\s+)?[a-zA-Z0-9:_-]+\b/g,
+    /\bnode\s+--test\b/g,
+    /\bmake\s+[a-zA-Z0-9._-]+\b/g,
+    /\b(?:python3?|python)\s+-m\s+pytest\b/g,
+    /\bpytest\b/g,
+    /\bcargo\s+(?:test|build|clippy)\b/g,
+    /\bswift\s+(?:test|build)\b/g
+  ];
+
+  for (const pattern of patterns) {
+    for (const match of text.matchAll(pattern)) {
+      commands.add(normalizeCommand(match[0]));
+    }
+  }
+
+  return Array.from(commands);
+}
+
+function executableCommandStatus(repoPath, command, stack, packageJson, makeTargets) {
+  const normalized = normalizeCommand(command);
+  const scripts = packageJson?.scripts ?? {};
+
+  if (normalized === "npm test") {
+    return Boolean(scripts.test);
+  }
+
+  const npmRunMatch = normalized.match(/^npm run ([a-zA-Z0-9:_-]+)$/);
+  if (npmRunMatch) {
+    return Boolean(scripts[npmRunMatch[1]]);
+  }
+
+  const npmShortMatch = normalized.match(/^npm ([a-zA-Z0-9:_-]+)$/);
+  if (npmShortMatch && npmShortMatch[1] !== "run") {
+    if (["ci", "install", "pack", "publish"].includes(npmShortMatch[1])) {
+      return Boolean(packageJson);
+    }
+    return Boolean(scripts[npmShortMatch[1]]);
+  }
+
+  const makeMatch = normalized.match(/^make ([a-zA-Z0-9._-]+)$/);
+  if (makeMatch) {
+    return makeTargets.includes(makeMatch[1]);
+  }
+
+  if (normalized === "node --test") {
+    return stack === "node" || exists(repoPath, "package.json");
+  }
+
+  if (["pytest", "python -m pytest", "python3 -m pytest"].includes(normalized)) {
+    return stack === "python" || exists(repoPath, "pyproject.toml") || exists(repoPath, "requirements.txt");
+  }
+
+  if (["cargo test", "cargo build", "cargo clippy"].includes(normalized)) {
+    return exists(repoPath, "Cargo.toml");
+  }
+
+  if (["swift test", "swift build"].includes(normalized)) {
+    return exists(repoPath, "Package.swift");
+  }
+
+  return true;
 }
 
 function hasReadmeGuidance(readmeText) {
@@ -184,6 +251,32 @@ function findLicense(repoPath) {
 function findExampleMaterial(repoPath) {
   const candidates = ["examples", "example", "demo", "fixtures", "samples"];
   return candidates.find((entry) => exists(repoPath, entry)) ?? null;
+}
+
+function documentCommandFiles(repoPath) {
+  const seen = new Set();
+  const files = [];
+
+  for (const file of DOCUMENTED_COMMAND_FILES) {
+    if (!exists(repoPath, file)) {
+      continue;
+    }
+    const fullPath = path.join(repoPath, file);
+    let realPath;
+    try {
+      realPath = fs.realpathSync(fullPath);
+    } catch {
+      realPath = fullPath;
+    }
+    const key = realPath.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    files.push(file);
+  }
+
+  return files;
 }
 
 function trackedEnvFiles(repoPath) {
@@ -303,6 +396,44 @@ function ciVerificationStatus(repoPath, workflowFiles, commandCandidates) {
   };
 }
 
+function documentedCommandStatus(repoPath, stack, packageJson) {
+  const makeTargets = parseMakeTargets(repoPath);
+  const unresolved = [];
+  const documented = [];
+
+  for (const file of documentCommandFiles(repoPath)) {
+    const commands = extractDocumentedCommands(readText(repoPath, file));
+    for (const command of commands) {
+      documented.push(`${file}: ${command}`);
+      if (!executableCommandStatus(repoPath, command, stack, packageJson, makeTargets)) {
+        unresolved.push(`${file}: ${command}`);
+      }
+    }
+  }
+
+  if (unresolved.length > 0) {
+    return {
+      ok: false,
+      message: `Found ${unresolved.length} documented command${unresolved.length === 1 ? "" : "s"} that do not match repo scripts or targets.`,
+      evidence: unresolved.slice(0, 8)
+    };
+  }
+
+  if (documented.length > 0) {
+    return {
+      ok: true,
+      message: `Documented commands match detected repo scripts or targets.`,
+      evidence: documented.slice(0, 8)
+    };
+  }
+
+  return {
+    ok: true,
+    message: "No README or agent command references found to validate.",
+    evidence: []
+  };
+}
+
 function makeCheck({ id, title, severity, status, message, fix, evidence }) {
   const passed = status === "pass";
   const warned = status === "warn";
@@ -346,6 +477,7 @@ export function scanRepo(repoPath) {
   const pkgStatus = packageMetadataStatus(packageJson);
   const verificationCandidates = verificationCommandCandidates(commands, packageJson);
   const ciVerification = ciVerificationStatus(absolutePath, workflowFiles, verificationCandidates);
+  const documentedCommands = documentedCommandStatus(absolutePath, stack, packageJson);
 
   const checks = [
     makeCheck({
@@ -438,6 +570,15 @@ export function scanRepo(repoPath) {
       message: ciVerification.message,
       fix: "Make CI run the same verification command that agents and contributors are expected to run locally.",
       evidence: ciVerification.evidence
+    }),
+    makeCheck({
+      id: "documented-commands",
+      title: "Documented commands",
+      severity: "medium",
+      status: documentedCommands.ok ? "pass" : "warn",
+      message: documentedCommands.message,
+      fix: "Update README or AGENTS.md commands so every documented command maps to an actual script, Make target, or stack command.",
+      evidence: documentedCommands.evidence
     }),
     makeCheck({
       id: "working-tree",

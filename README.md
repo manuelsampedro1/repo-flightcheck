@@ -26,6 +26,7 @@ This CLI checks the basics that usually decide whether an agent session goes smo
 - Build and lint coverage where the stack implies they should exist.
 - GitHub Actions workflows.
 - Whether CI appears to run the same verification command expected locally.
+- Whether documented README or agent commands map to actual scripts, Make targets, or stack commands.
 - Git working-tree cleanliness before handing work to an agent.
 - Tracked `.env` files and whether `.env` is ignored.
 - Example or fixture material that makes the repo feel real.
@@ -64,7 +65,7 @@ From `node bin/repo-flightcheck.js fixtures/sample-repo` with the local fixture 
 
 ```text
 repo-flightcheck :: fixtures/sample-repo
-Score: 49/100
+Score: 48/100
 Stack: generic
 
 WARN  README guidance              README exists but is missing clear installation or usage guidance.
@@ -76,6 +77,7 @@ WARN  Build command                No build command detected for this generic re
 WARN  Lint command                 No lint command detected for this generic repo.
 WARN  CI workflow                  No GitHub Actions workflow detected.
 WARN  CI verification              No CI workflow is available to run the verification command.
+PASS  Documented commands          No README or agent command references found to validate.
 PASS  Working tree                 Git working tree is clean.
 WARN  Secret hygiene               No tracked env files found, but .env is not explicitly ignored.
 WARN  Examples or fixtures         No examples, demo, or fixtures folder found.
@@ -125,5 +127,6 @@ node bin/repo-flightcheck.js . --strict --threshold 80
 - It uses heuristics, not full semantic parsing.
 - Some repos intentionally skip build or lint steps; those show up as warnings, not always failures.
 - Agent-instruction quality is checked by keyword signals, so unusual but valid guidance may need clearer headings.
+- Documented command validation is heuristic and only checks common package-manager, Make, and stack test commands in README or agent guidance.
 - It inspects the working tree on disk, not remote GitHub settings like branch protection or repository visibility.
 - The working-tree check uses local Git status. A dirty parent repo can affect scans of subdirectories inside that repo.

@@ -70,6 +70,7 @@ test("scores a healthy node repo well", () => {
   assert.ok(report.summary.score >= 90);
   assert.equal(report.checks.find((check) => check.id === "verification-command")?.status, "pass");
   assert.equal(report.checks.find((check) => check.id === "ci-verification")?.status, "pass");
+  assert.equal(report.checks.find((check) => check.id === "documented-commands")?.status, "pass");
 });
 
 test("warns when agent instructions are too thin", () => {
@@ -125,6 +126,62 @@ test("warns when CI does not run the detected verification command", () => {
   assert.equal(check?.status, "warn");
   assert.match(check?.message ?? "", /does not appear to run/);
   assert.deepEqual(check?.evidence, [".github/workflows/ci.yml"]);
+});
+
+test("warns when documented commands do not map to repo scripts", () => {
+  const repoPath = writeRepo({
+    "README.md": "# Demo\n\n## Quickstart\nInstall it.\n\n## Usage\nRun npm run e2e before shipping.\n",
+    "LICENSE": "MIT",
+    ".gitignore": ".env\n",
+    "AGENTS.md": "# Agent Guide\n\n## Goal\nShip the demo.\n\n## Rules\nPrefer small changes.\n\n## Verification\nRun npm test.\n",
+    "package.json": JSON.stringify({
+      name: "demo",
+      description: "demo repo",
+      license: "MIT",
+      scripts: {
+        test: "node --test"
+      }
+    }),
+    ".github/workflows/ci.yml": "name: ci\njobs:\n  test:\n    steps:\n      - run: npm test\n",
+    "fixtures/sample.txt": "hello"
+  });
+
+  const report = scanRepo(repoPath);
+  const check = report.checks.find((item) => item.id === "documented-commands");
+
+  assert.equal(check?.status, "warn");
+  assert.match(check?.message ?? "", /do not match repo scripts/);
+  assert.deepEqual(check?.evidence, ["README.md: npm run e2e"]);
+});
+
+test("passes when documented commands match package scripts and make targets", () => {
+  const repoPath = writeRepo({
+    "README.md": "# Demo\n\n## Quickstart\nRun npm install.\n\n## Usage\nRun npm test and make build.\n",
+    "LICENSE": "MIT",
+    ".gitignore": ".env\n",
+    "AGENTS.md": "# Agent Guide\n\n## Goal\nShip the demo.\n\n## Rules\nPrefer small changes.\n\n## Verification\nRun npm run lint.\n",
+    "Makefile": "build:\n\t@echo build\n",
+    "package.json": JSON.stringify({
+      name: "demo",
+      description: "demo repo",
+      license: "MIT",
+      scripts: {
+        test: "node --test",
+        lint: "node scripts/lint.js"
+      }
+    }),
+    ".github/workflows/ci.yml": "name: ci\njobs:\n  test:\n    steps:\n      - run: npm test\n",
+    "fixtures/sample.txt": "hello"
+  });
+
+  const report = scanRepo(repoPath);
+  const check = report.checks.find((item) => item.id === "documented-commands");
+
+  assert.equal(check?.status, "pass");
+  assert.ok(check?.evidence.includes("README.md: npm install"));
+  assert.ok(check?.evidence.includes("README.md: npm test"));
+  assert.ok(check?.evidence.includes("README.md: make build"));
+  assert.ok(check?.evidence.includes("AGENTS.md: npm run lint"));
 });
 
 test("passes a clean git working tree", () => {
