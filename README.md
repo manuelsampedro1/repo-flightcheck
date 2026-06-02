@@ -25,6 +25,7 @@ This CLI checks the basics that usually decide whether an agent session goes smo
 - Verification commands from `package.json`, `Makefile`, Python config, Rust, or Swift packages.
 - Build and lint coverage where the stack implies they should exist.
 - GitHub Actions workflows.
+- Whether CI appears to run the same verification command expected locally.
 - Git working-tree cleanliness before handing work to an agent.
 - Tracked `.env` files and whether `.env` is ignored.
 - Example or fixture material that makes the repo feel real.
@@ -74,6 +75,7 @@ FAIL  Verification command         No reliable verification command detected.
 WARN  Build command                No build command detected for this generic repo.
 WARN  Lint command                 No lint command detected for this generic repo.
 WARN  CI workflow                  No GitHub Actions workflow detected.
+WARN  CI verification              No CI workflow is available to run the verification command.
 PASS  Working tree                 Git working tree is clean.
 WARN  Secret hygiene               No tracked env files found, but .env is not explicitly ignored.
 WARN  Examples or fixtures         No examples, demo, or fixtures folder found.

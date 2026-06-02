@@ -59,7 +59,7 @@ test("scores a healthy node repo well", () => {
         lint: "node lint.js"
       }
     }),
-    ".github/workflows/ci.yml": "name: ci\n",
+    ".github/workflows/ci.yml": "name: ci\njobs:\n  test:\n    steps:\n      - run: node --test\n",
     "fixtures/sample.txt": "hello"
   });
 
@@ -69,6 +69,7 @@ test("scores a healthy node repo well", () => {
   assert.equal(report.summary.criticalFailures, 0);
   assert.ok(report.summary.score >= 90);
   assert.equal(report.checks.find((check) => check.id === "verification-command")?.status, "pass");
+  assert.equal(report.checks.find((check) => check.id === "ci-verification")?.status, "pass");
 });
 
 test("warns when agent instructions are too thin", () => {
@@ -87,7 +88,7 @@ test("warns when agent instructions are too thin", () => {
         lint: "node lint.js"
       }
     }),
-    ".github/workflows/ci.yml": "name: ci\n",
+    ".github/workflows/ci.yml": "name: ci\njobs:\n  test:\n    steps:\n      - run: node --test\n",
     "fixtures/sample.txt": "hello"
   });
 
@@ -96,6 +97,34 @@ test("warns when agent instructions are too thin", () => {
 
   assert.equal(check?.status, "warn");
   assert.match(check?.message ?? "", /missing/);
+});
+
+test("warns when CI does not run the detected verification command", () => {
+  const repoPath = writeRepo({
+    "README.md": "# Demo\n\n## Quickstart\nInstall it.\n\n## Usage\nRun it.\n",
+    "LICENSE": "MIT",
+    ".gitignore": ".env\n",
+    "AGENTS.md": "# Agent Guide\n\n## Goal\nShip the demo.\n\n## Rules\nPrefer small changes.\n\n## Verification\nRun npm test.\n",
+    "package.json": JSON.stringify({
+      name: "demo",
+      description: "demo repo",
+      license: "MIT",
+      scripts: {
+        test: "node --test",
+        build: "node build.js",
+        lint: "node lint.js"
+      }
+    }),
+    ".github/workflows/ci.yml": "name: ci\njobs:\n  build:\n    steps:\n      - run: npm run build\n",
+    "fixtures/sample.txt": "hello"
+  });
+
+  const report = scanRepo(repoPath);
+  const check = report.checks.find((item) => item.id === "ci-verification");
+
+  assert.equal(check?.status, "warn");
+  assert.match(check?.message ?? "", /does not appear to run/);
+  assert.deepEqual(check?.evidence, [".github/workflows/ci.yml"]);
 });
 
 test("passes a clean git working tree", () => {
@@ -114,7 +143,7 @@ test("passes a clean git working tree", () => {
         lint: "node lint.js"
       }
     }),
-    ".github/workflows/ci.yml": "name: ci\n",
+    ".github/workflows/ci.yml": "name: ci\njobs:\n  test:\n    steps:\n      - run: node --test\n",
     "fixtures/sample.txt": "hello"
   });
   initCleanGitRepo(repoPath);

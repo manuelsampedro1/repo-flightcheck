@@ -37,6 +37,25 @@ function listWorkflowFiles(repoPath) {
     .map((entry) => path.join(".github", "workflows", entry));
 }
 
+function normalizeCommand(command) {
+  return command.trim().replace(/\s+/g, " ");
+}
+
+function workflowContainsCommand(repoPath, workflowFiles, commandCandidates) {
+  const candidates = commandCandidates.map(normalizeCommand).filter(Boolean);
+  const matches = [];
+
+  for (const workflowFile of workflowFiles) {
+    const normalizedWorkflow = normalizeCommand(readText(repoPath, workflowFile));
+    const matchedCommand = candidates.find((command) => normalizedWorkflow.includes(command));
+    if (matchedCommand) {
+      matches.push(`${workflowFile}: ${matchedCommand}`);
+    }
+  }
+
+  return matches;
+}
+
 function detectStack(repoPath) {
   if (exists(repoPath, "package.json")) return "node";
   if (exists(repoPath, "pyproject.toml") || exists(repoPath, "requirements.txt")) return "python";
@@ -114,6 +133,24 @@ function detectCommands(repoPath, stack, packageJson) {
   }
 
   return commands;
+}
+
+function verificationCommandCandidates(commands, packageJson) {
+  if (!commands.test) {
+    return [];
+  }
+
+  const candidates = [commands.test];
+  const testScript = packageJson?.scripts?.test;
+
+  if (commands.test === "npm test") {
+    candidates.push("npm run test");
+  }
+  if (testScript) {
+    candidates.push(testScript);
+  }
+
+  return Array.from(new Set(candidates));
 }
 
 function findAgentFile(repoPath) {
@@ -233,6 +270,39 @@ function packageMetadataStatus(packageJson) {
   };
 }
 
+function ciVerificationStatus(repoPath, workflowFiles, commandCandidates) {
+  if (workflowFiles.length === 0) {
+    return {
+      ok: false,
+      message: "No CI workflow is available to run the verification command.",
+      evidence: []
+    };
+  }
+
+  if (commandCandidates.length === 0) {
+    return {
+      ok: false,
+      message: "No verification command is available to compare against CI workflows.",
+      evidence: workflowFiles
+    };
+  }
+
+  const matches = workflowContainsCommand(repoPath, workflowFiles, commandCandidates);
+  if (matches.length > 0) {
+    return {
+      ok: true,
+      message: "CI workflow appears to run the local verification command.",
+      evidence: matches
+    };
+  }
+
+  return {
+    ok: false,
+    message: "CI workflow exists but does not appear to run the detected verification command.",
+    evidence: workflowFiles
+  };
+}
+
 function makeCheck({ id, title, severity, status, message, fix, evidence }) {
   const passed = status === "pass";
   const warned = status === "warn";
@@ -274,6 +344,8 @@ export function scanRepo(repoPath) {
   const envIgnored = envIsIgnored(absolutePath);
   const workingTree = workingTreeStatus(absolutePath);
   const pkgStatus = packageMetadataStatus(packageJson);
+  const verificationCandidates = verificationCommandCandidates(commands, packageJson);
+  const ciVerification = ciVerificationStatus(absolutePath, workflowFiles, verificationCandidates);
 
   const checks = [
     makeCheck({
@@ -357,6 +429,15 @@ export function scanRepo(repoPath) {
         : "No GitHub Actions workflow detected.",
       fix: "Add a small CI workflow that runs the same verification command you expect contributors to use locally.",
       evidence: workflowFiles
+    }),
+    makeCheck({
+      id: "ci-verification",
+      title: "CI verification",
+      severity: "medium",
+      status: ciVerification.ok ? "pass" : "warn",
+      message: ciVerification.message,
+      fix: "Make CI run the same verification command that agents and contributors are expected to run locally.",
+      evidence: ciVerification.evidence
     }),
     makeCheck({
       id: "working-tree",
