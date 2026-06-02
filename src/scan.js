@@ -424,6 +424,13 @@ function taskContractStatus(repoPath) {
   if (!taskFile) {
     return {
       ok: true,
+      present: false,
+      source: null,
+      status: "absent",
+      requiredSections: `0/${TASK_CONTRACT_SECTIONS.length}`,
+      missingSections: [],
+      placeholderMarkers: [],
+      issues: [],
       message: "No AGENT_TASK.md found; task-specific contract is optional.",
       evidence: []
     };
@@ -431,10 +438,13 @@ function taskContractStatus(repoPath) {
 
   const sections = markdownSections(readText(repoPath, taskFile));
   const issues = [];
+  const missingSections = [];
+  const placeholderMarkers = [];
 
   for (const section of TASK_CONTRACT_SECTIONS) {
     const content = sections[section] ?? "";
     if (!content) {
+      missingSections.push(section);
       issues.push(`missing ${section}`);
       continue;
     }
@@ -442,9 +452,12 @@ function taskContractStatus(repoPath) {
       issues.push(`${section} is too short`);
     }
     if (hasTaskContractPlaceholder(content)) {
+      placeholderMarkers.push(section);
       issues.push(`${section} still looks like placeholder text`);
     }
   }
+
+  const requiredSections = `${TASK_CONTRACT_SECTIONS.length - missingSections.length}/${TASK_CONTRACT_SECTIONS.length}`;
 
   if ((sections["Acceptance Criteria"] ?? "") && markdownBulletCount(sections["Acceptance Criteria"]) < 2) {
     issues.push("Acceptance Criteria needs at least two concrete bullets");
@@ -468,6 +481,13 @@ function taskContractStatus(repoPath) {
   if (issues.length === 0) {
     return {
       ok: true,
+      present: true,
+      source: taskFile,
+      status: "pass",
+      requiredSections,
+      missingSections,
+      placeholderMarkers,
+      issues,
       message: `${taskFile} includes objective, acceptance criteria, constraints, verification, risks, and out-of-scope boundaries.`,
       evidence: [taskFile]
     };
@@ -475,6 +495,13 @@ function taskContractStatus(repoPath) {
 
   return {
     ok: false,
+    present: true,
+    source: taskFile,
+    status: "warn",
+    requiredSections,
+    missingSections,
+    placeholderMarkers,
+    issues,
     message: `${taskFile} has ${issues.length} task contract issue${issues.length === 1 ? "" : "s"}.`,
     evidence: issues.slice(0, 8).map((issue) => `${taskFile}: ${issue}`)
   };
@@ -1143,6 +1170,7 @@ export function buildAgentContract(report, threshold = DEFAULT_AGENT_CONTRACT_TH
     score: report.summary.score,
     criticalFailures: report.summary.criticalFailures,
     commands: report.commands,
+    taskContract: report.taskContract ?? null,
     requiredBeforeAgent,
     recommendedBeforeAgent,
     nextFixes: report.nextFixes
@@ -1394,6 +1422,15 @@ export function scanRepo(repoPath, options = {}) {
     repoPath: absolutePath,
     stack,
     commands,
+    taskContract: {
+      present: taskContract.present,
+      source: taskContract.source,
+      status: taskContract.status,
+      requiredSections: taskContract.requiredSections,
+      missingSections: taskContract.missingSections,
+      placeholderMarkers: taskContract.placeholderMarkers,
+      issues: taskContract.issues
+    },
     summary,
     checks,
     nextFixes

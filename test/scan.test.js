@@ -164,6 +164,15 @@ test("builds an agent contract for a ready repo", () => {
   assert.equal(contract.ready, true);
   assert.equal(contract.threshold, 80);
   assert.equal(contract.commands.test, "npm test");
+  assert.deepEqual(contract.taskContract, {
+    present: false,
+    source: null,
+    status: "absent",
+    requiredSections: "0/8",
+    missingSections: [],
+    placeholderMarkers: [],
+    issues: []
+  });
   assert.equal(contract.requiredBeforeAgent.length, 0);
   assert.equal(contract.recommendedBeforeAgent.length, 0);
 });
@@ -278,7 +287,8 @@ test("passes a complete agent task contract when present", () => {
     ].join("\n")
   });
 
-  const check = scanRepo(repoPath).checks.find((item) => item.id === "task-contract");
+  const report = scanRepo(repoPath);
+  const check = report.checks.find((item) => item.id === "task-contract");
 
   assert.equal(check?.status, "pass");
   assert.equal(
@@ -286,6 +296,16 @@ test("passes a complete agent task contract when present", () => {
     "AGENT_TASK.md includes objective, acceptance criteria, constraints, verification, risks, and out-of-scope boundaries."
   );
   assert.deepEqual(check?.evidence, ["AGENT_TASK.md"]);
+  assert.deepEqual(report.taskContract, {
+    present: true,
+    source: "AGENT_TASK.md",
+    status: "pass",
+    requiredSections: "8/8",
+    missingSections: [],
+    placeholderMarkers: [],
+    issues: []
+  });
+  assert.deepEqual(report.agentContract.taskContract, report.taskContract);
 });
 
 test("warns when an agent task contract is incomplete", () => {
@@ -306,7 +326,8 @@ test("warns when an agent task contract is incomplete", () => {
     ].join("\n")
   });
 
-  const check = scanRepo(repoPath).checks.find((item) => item.id === "task-contract");
+  const report = scanRepo(repoPath);
+  const check = report.checks.find((item) => item.id === "task-contract");
 
   assert.equal(check?.status, "warn");
   assert.match(check?.message ?? "", /^AGENT_TASK\.md has \d+ task contract issues\.$/);
@@ -314,6 +335,20 @@ test("warns when an agent task contract is incomplete", () => {
   assert.ok(check?.evidence.includes("AGENT_TASK.md: Objective still looks like placeholder text"));
   assert.ok(check?.evidence.includes("AGENT_TASK.md: missing Context"));
   assert.equal(check?.evidence.length, 8);
+  assert.equal(report.taskContract.present, true);
+  assert.equal(report.taskContract.source, "AGENT_TASK.md");
+  assert.equal(report.taskContract.status, "warn");
+  assert.equal(report.taskContract.requiredSections, "3/8");
+  assert.deepEqual(report.taskContract.missingSections, [
+    "Context",
+    "Constraints",
+    "Expected Changes",
+    "Risks",
+    "Out of Scope"
+  ]);
+  assert.deepEqual(report.taskContract.placeholderMarkers, ["Objective"]);
+  assert.ok(report.taskContract.issues.includes("Acceptance Criteria needs at least two concrete bullets"));
+  assert.deepEqual(report.agentContract.taskContract, report.taskContract);
 });
 
 test("warns when CI does not run the detected verification command", () => {

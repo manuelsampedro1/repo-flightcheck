@@ -38,6 +38,7 @@ This CLI checks the basics that usually decide whether an agent session goes smo
 - Tracked `.env` files and whether `.env` is ignored.
 - Example or fixture material that makes the repo feel real.
 - A compact agent-readiness contract for tools that need blockers, recommendations, and commands without parsing the full report.
+- Structured task-contract metadata in JSON and agent-contract output, including source, status, missing sections, placeholders, and issues.
 
 ## Quickstart
 
@@ -161,4 +162,4 @@ node bin/repo-flightcheck.js . --strict --threshold 80
 - Python CLI entrypoint validation checks simple `pyproject.toml` `[project.scripts]` targets shaped as `module:function` in root or `src/` layouts; dynamic TOML, generated modules, or class-based callables may need a documented exception.
 - It checks whether `origin` exists locally and, with `--check-remote`, whether Git can reach it, whether common missing-repository or permission failures are visible, and whether local `HEAD` matches the current branch on `origin`; it does not inspect GitHub branch protection or repository visibility settings.
 - The working-tree check uses local Git status. A dirty parent repo can affect scans of subdirectories inside that repo.
-- The agent-readiness contract is a compact view of the same heuristic checks, not a substitute for review or domain-specific acceptance criteria.
+- The agent-readiness contract is a compact view of the same heuristic checks, plus structured task-contract metadata when present; it is not a substitute for review or domain-specific acceptance criteria.
