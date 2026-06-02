@@ -473,6 +473,110 @@ function workingTreeStatus(repoPath) {
   };
 }
 
+function gitRemoteStatus(repoPath, options = {}) {
+  try {
+    execFileSync("git", ["-C", repoPath, "rev-parse", "--is-inside-work-tree"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+  } catch {
+    return {
+      ok: false,
+      message: "Path is not a Git working tree, so remote publication cannot be checked.",
+      evidence: []
+    };
+  }
+
+  let remoteUrl = "";
+  try {
+    remoteUrl = execFileSync("git", ["-C", repoPath, "remote", "get-url", "origin"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"]
+    }).trim();
+  } catch {
+    return {
+      ok: false,
+      message: "No origin remote configured.",
+      evidence: []
+    };
+  }
+
+  const sanitizedUrl = sanitizeRemoteUrl(remoteUrl);
+  if (!options.checkRemote) {
+    return {
+      ok: true,
+      message: "Origin remote is configured.",
+      evidence: [sanitizedUrl]
+    };
+  }
+
+  const remoteExists = options.remoteExists ?? remoteReachable;
+  let result;
+  try {
+    result = remoteExists(repoPath, "origin");
+  } catch (error) {
+    result = {
+      ok: false,
+      message: error?.message ?? "Remote check failed."
+    };
+  }
+
+  if (result?.ok) {
+    return {
+      ok: true,
+      message: "Origin remote is reachable.",
+      evidence: [sanitizedUrl]
+    };
+  }
+
+  return {
+    ok: false,
+    message: "Origin remote is configured but could not be reached.",
+    evidence: [sanitizedUrl, sanitizeRemoteText(result?.message ?? "Remote check failed.")]
+  };
+}
+
+function remoteReachable(repoPath, remoteName) {
+  try {
+    execFileSync("git", ["-C", repoPath, "ls-remote", "--heads", remoteName], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: 10_000
+    });
+    return { ok: true };
+  } catch (error) {
+    const message = [error.stderr, error.stdout, error.message].filter(Boolean).join("\n").trim();
+    return {
+      ok: false,
+      message
+    };
+  }
+}
+
+function sanitizeRemoteUrl(remoteUrl) {
+  const value = String(remoteUrl ?? "").trim();
+  if (/^https?:\/\//i.test(value)) {
+    try {
+      const parsed = new URL(value);
+      parsed.username = "";
+      parsed.password = "";
+      return parsed.toString().replace(/\/$/, "");
+    } catch {
+      return value.replace(/(https?:\/\/)[^/@\s]+@/i, "$1");
+    }
+  }
+  return value.replace(/(https?:\/\/)[^/@\s]+@/i, "$1");
+}
+
+function sanitizeRemoteText(text) {
+  return String(text ?? "")
+    .split(/\r?\n/)
+    .map((line) => sanitizeRemoteUrl(line.trim()))
+    .filter(Boolean)
+    .slice(0, 3)
+    .join(" ");
+}
+
 function packageMetadataStatus(packageJson) {
   if (!packageJson) {
     return {
@@ -821,6 +925,7 @@ export function scanRepo(repoPath, options = {}) {
   const envFiles = trackedEnvFiles(absolutePath);
   const envIgnored = envIsIgnored(absolutePath);
   const workingTree = workingTreeStatus(absolutePath);
+  const gitRemote = gitRemoteStatus(absolutePath, options);
   const pkgStatus = packageMetadataStatus(packageJson);
   const verificationCandidates = verificationCommandCandidates(commands, packageJson);
   const ciVerification = ciVerificationStatus(absolutePath, workflowFiles, verificationCandidates);
@@ -947,6 +1052,15 @@ export function scanRepo(repoPath, options = {}) {
       message: workingTree.message,
       fix: "Start agent work from a clean Git state, or explicitly document the existing staged, unstaged, and untracked changes.",
       evidence: workingTree.evidence
+    }),
+    makeCheck({
+      id: "git-remote",
+      title: "Git remote",
+      severity: "low",
+      status: gitRemote.ok ? "pass" : "warn",
+      message: gitRemote.message,
+      fix: "Configure a reachable origin remote before claiming a repo is published or ready for public proof.",
+      evidence: gitRemote.evidence
     }),
     makeCheck({
       id: "secret-hygiene",

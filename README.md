@@ -33,6 +33,7 @@ This CLI checks the basics that usually decide whether an agent session goes smo
 - Whether Node CLI `package.json` `bin` entrypoints point to executable Node scripts.
 - Whether Python CLI `pyproject.toml` `[project.scripts]` entrypoints point to existing modules and defined functions.
 - Git working-tree cleanliness before handing work to an agent.
+- Whether an `origin` Git remote exists, with optional reachability validation for publish proof.
 - Tracked `.env` files and whether `.env` is ignored.
 - Example or fixture material that makes the repo feel real.
 - A compact agent-readiness contract for tools that need blockers, recommendations, and commands without parsing the full report.
@@ -71,6 +72,12 @@ Strict mode for CI:
 node bin/repo-flightcheck.js . --strict --threshold 80
 ```
 
+Validate that a configured `origin` remote is reachable before claiming a repo is published:
+
+```bash
+node bin/repo-flightcheck.js . --check-remote
+```
+
 ## Example output
 
 From `node bin/repo-flightcheck.js fixtures/sample-repo` with the local fixture path shortened:
@@ -92,6 +99,7 @@ WARN  CI workflow                  No GitHub Actions workflow detected.
 WARN  CI verification              No CI workflow is available to run the verification command.
 PASS  Documented commands          No README or agent command references found to validate.
 PASS  Working tree                 Git working tree is clean.
+WARN  Git remote                   No origin remote configured.
 WARN  Secret hygiene               No tracked env files found, but .env is not explicitly ignored.
 WARN  Examples or fixtures         No examples, demo, or fixtures folder found.
 PASS  Package metadata             No package.json present, so package metadata is not required.
@@ -101,7 +109,7 @@ PASS  Python CLI entrypoint        No pyproject [project.scripts] entrypoints de
 Next fixes:
 1. README guidance: Add a README with setup, usage, and a short explanation of why the project matters.
 2. Verification command: Expose one obvious test or check command that an agent can run before finishing work.
-3. Secret hygiene: Ignore .env files and keep secrets out of version control. If anything sensitive was committed, rotate it.
+3. Git remote: Configure a reachable origin remote before claiming a repo is published or ready for public proof.
 ```
 
 ## Exit codes
@@ -146,8 +154,9 @@ node bin/repo-flightcheck.js . --strict --threshold 80
 - Stack detection is intentionally shallow; JavaScript actions with `package.json` report as Node, while dependency-light composite actions can report as `github-action`.
 - Documented command validation is heuristic and only checks common package-manager, Make, Python test-runner, and stack test commands in README or agent guidance.
 - Tool availability checks the current `PATH`; CI containers, local shells, and Codex desktop sessions can legitimately differ.
+- Remote reachability is only checked when `--check-remote` is passed because it can require network access or GitHub authentication.
 - Node CLI entrypoint validation checks local `package.json` `bin` targets for file presence, a Node shebang, and POSIX executability; Windows-only packaging may need a documented exception.
 - Python CLI entrypoint validation checks simple `pyproject.toml` `[project.scripts]` targets shaped as `module:function` in root or `src/` layouts; dynamic TOML, generated modules, or class-based callables may need a documented exception.
-- It inspects the working tree on disk, not remote GitHub settings like branch protection or repository visibility.
+- It checks whether `origin` exists locally and, with `--check-remote`, whether Git can reach it; it does not inspect GitHub branch protection or repository visibility settings.
 - The working-tree check uses local Git status. A dirty parent repo can affect scans of subdirectories inside that repo.
 - The agent-readiness contract is a compact view of the same heuristic checks, not a substitute for review or domain-specific acceptance criteria.

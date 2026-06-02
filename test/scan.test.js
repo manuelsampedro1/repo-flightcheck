@@ -150,6 +150,7 @@ test("builds an agent contract for a ready repo", () => {
     "fixtures/sample.txt": "hello"
   });
   initCleanGitRepo(repoPath);
+  git(repoPath, ["remote", "add", "origin", "git@github.com:example/demo.git"]);
 
   const report = scanRepo(repoPath, { commandExists: () => true });
   const contract = buildAgentContract(report, 80);
@@ -536,6 +537,61 @@ test("passes a clean git working tree", () => {
 
   assert.equal(check?.status, "pass");
   assert.match(check?.message ?? "", /clean/);
+});
+
+test("passes when an origin remote is configured", () => {
+  const repoPath = writeRepo({
+    "README.md": "# Demo\n\n## Quickstart\nInstall it.\n\n## Usage\nRun it.\n"
+  });
+  initCleanGitRepo(repoPath);
+  git(repoPath, ["remote", "add", "origin", "git@github.com:example/demo.git"]);
+
+  const report = scanRepo(repoPath);
+  const check = report.checks.find((item) => item.id === "git-remote");
+
+  assert.equal(check?.status, "pass");
+  assert.equal(check?.message, "Origin remote is configured.");
+  assert.deepEqual(check?.evidence, ["git@github.com:example/demo.git"]);
+});
+
+test("warns when a git repo has no origin remote", () => {
+  const repoPath = writeRepo({
+    "README.md": "# Demo\n\n## Quickstart\nInstall it.\n\n## Usage\nRun it.\n"
+  });
+  initCleanGitRepo(repoPath);
+
+  const report = scanRepo(repoPath);
+  const check = report.checks.find((item) => item.id === "git-remote");
+
+  assert.equal(check?.status, "warn");
+  assert.equal(check?.message, "No origin remote configured.");
+});
+
+test("validates remote reachability when requested", () => {
+  const repoPath = writeRepo({
+    "README.md": "# Demo\n\n## Quickstart\nInstall it.\n\n## Usage\nRun it.\n"
+  });
+  initCleanGitRepo(repoPath);
+  git(repoPath, ["remote", "add", "origin", "https://token@example.com/example/demo.git"]);
+
+  const reachable = scanRepo(repoPath, {
+    checkRemote: true,
+    remoteExists: () => ({ ok: true })
+  }).checks.find((item) => item.id === "git-remote");
+  const missing = scanRepo(repoPath, {
+    checkRemote: true,
+    remoteExists: () => ({
+      ok: false,
+      message: "ERROR: Repository not found."
+    })
+  }).checks.find((item) => item.id === "git-remote");
+
+  assert.equal(reachable?.status, "pass");
+  assert.equal(reachable?.message, "Origin remote is reachable.");
+  assert.deepEqual(reachable?.evidence, ["https://example.com/example/demo.git"]);
+  assert.equal(missing?.status, "warn");
+  assert.equal(missing?.message, "Origin remote is configured but could not be reached.");
+  assert.deepEqual(missing?.evidence, ["https://example.com/example/demo.git", "ERROR: Repository not found."]);
 });
 
 test("warns when a git working tree has pre-existing changes", () => {

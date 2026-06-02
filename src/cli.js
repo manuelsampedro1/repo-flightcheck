@@ -4,12 +4,13 @@ function printHelp() {
   console.log(`repo-flightcheck
 
 Usage:
-  repo-flightcheck [path] [--json|--contract] [--strict] [--threshold <score>]
+  repo-flightcheck [path] [--json|--contract] [--strict] [--check-remote] [--threshold <score>]
 
 Options:
   --json            Print JSON instead of the text report.
   --contract        Print a compact agent-readiness contract as JSON.
   --strict          Exit with code 1 if the score is below threshold or any critical check fails.
+  --check-remote    Validate that the configured origin remote is reachable.
   --threshold <n>   Minimum score required by strict mode and contract readiness. Default: 75.
   --help            Show this help text.
 `);
@@ -20,6 +21,7 @@ function parseArgs(argv) {
   let json = false;
   let contract = false;
   let strict = false;
+  let checkRemote = false;
   let threshold = 75;
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -35,6 +37,10 @@ function parseArgs(argv) {
     }
     if (arg === "--strict") {
       strict = true;
+      continue;
+    }
+    if (arg === "--check-remote") {
+      checkRemote = true;
       continue;
     }
     if (arg === "--help" || arg === "-h") {
@@ -60,12 +66,12 @@ function parseArgs(argv) {
     throw new Error("--json and --contract cannot be combined.");
   }
 
-  return { repoPath, json, contract, strict, threshold };
+  return { repoPath, json, contract, strict, checkRemote, threshold };
 }
 
 export async function main(argv) {
   const options = parseArgs(argv);
-  const report = scanRepo(options.repoPath);
+  const report = scanRepo(options.repoPath, { checkRemote: options.checkRemote });
 
   if (options.contract) {
     console.log(JSON.stringify(buildAgentContract(report, options.threshold), null, 2));
