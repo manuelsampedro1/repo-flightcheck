@@ -63,7 +63,7 @@ test("scores a healthy node repo well", () => {
     "fixtures/sample.txt": "hello"
   });
 
-  const report = scanRepo(repoPath);
+  const report = scanRepo(repoPath, { commandExists: () => true });
 
   assert.equal(report.stack, "node");
   assert.equal(report.summary.criticalFailures, 0);
@@ -71,6 +71,63 @@ test("scores a healthy node repo well", () => {
   assert.equal(report.checks.find((check) => check.id === "verification-command")?.status, "pass");
   assert.equal(report.checks.find((check) => check.id === "ci-verification")?.status, "pass");
   assert.equal(report.checks.find((check) => check.id === "documented-commands")?.status, "pass");
+  assert.equal(report.checks.find((check) => check.id === "tool-availability")?.status, "pass");
+});
+
+test("passes when detected command tools are locally available", () => {
+  const repoPath = writeRepo({
+    "README.md": "# Demo\n\n## Quickstart\nInstall it.\n\n## Usage\nRun it.\n",
+    "LICENSE": "MIT",
+    ".gitignore": ".env\nnode_modules\n",
+    "AGENTS.md": "# Agent Guide\n\n## Goal\nShip the demo.\n\n## Rules\nPrefer small changes.\n\n## Verification\nRun npm test.\n",
+    "package.json": JSON.stringify({
+      name: "demo",
+      description: "demo repo",
+      license: "MIT",
+      scripts: {
+        test: "node --test",
+        build: "node build.js",
+        lint: "node lint.js"
+      }
+    }),
+    ".github/workflows/ci.yml": "name: ci\njobs:\n  test:\n    steps:\n      - run: node --test\n",
+    "fixtures/sample.txt": "hello"
+  });
+
+  const report = scanRepo(repoPath, { commandExists: () => true });
+  const check = report.checks.find((item) => item.id === "tool-availability");
+
+  assert.equal(check?.status, "pass");
+  assert.match(check?.message ?? "", /npm/);
+  assert.deepEqual(check?.evidence, ["npm: available"]);
+});
+
+test("warns when detected command tools are missing locally", () => {
+  const repoPath = writeRepo({
+    "README.md": "# Demo\n\n## Quickstart\nInstall it.\n\n## Usage\nRun it.\n",
+    "LICENSE": "MIT",
+    ".gitignore": ".env\nnode_modules\n",
+    "AGENTS.md": "# Agent Guide\n\n## Goal\nShip the demo.\n\n## Rules\nPrefer small changes.\n\n## Verification\nRun npm test.\n",
+    "package.json": JSON.stringify({
+      name: "demo",
+      description: "demo repo",
+      license: "MIT",
+      scripts: {
+        test: "node --test",
+        build: "node build.js",
+        lint: "node lint.js"
+      }
+    }),
+    ".github/workflows/ci.yml": "name: ci\njobs:\n  test:\n    steps:\n      - run: node --test\n",
+    "fixtures/sample.txt": "hello"
+  });
+
+  const report = scanRepo(repoPath, { commandExists: (tool) => tool !== "npm" });
+  const check = report.checks.find((item) => item.id === "tool-availability");
+
+  assert.equal(check?.status, "warn");
+  assert.match(check?.message ?? "", /npm/);
+  assert.deepEqual(check?.evidence, ["npm: needed by npm test, npm run build, npm run lint"]);
 });
 
 test("builds an agent contract for a ready repo", () => {
@@ -94,7 +151,7 @@ test("builds an agent contract for a ready repo", () => {
   });
   initCleanGitRepo(repoPath);
 
-  const report = scanRepo(repoPath);
+  const report = scanRepo(repoPath, { commandExists: () => true });
   const contract = buildAgentContract(report, 80);
 
   assert.equal(report.agentContract.schemaVersion, "repo-flightcheck.agent-contract.v1");

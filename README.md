@@ -24,6 +24,7 @@ This CLI checks the basics that usually decide whether an agent session goes smo
 - Agent instructions like `AGENTS.md` or `CLAUDE.md`, including goal, constraints, and verification guidance.
 - Verification commands from `package.json`, `Makefile`, Python config, Rust, or Swift packages.
 - Build and lint coverage where the stack implies they should exist.
+- Whether the local environment has the tools required by detected verification, build, and lint commands.
 - Python standard-library `unittest` suites under `tests/` when no third-party runner is configured.
 - Dependency-light GitHub Action repos that expose `action.yml` or `action.yaml` plus Makefile verification targets.
 - GitHub Actions workflows.
@@ -76,7 +77,7 @@ From `node bin/repo-flightcheck.js fixtures/sample-repo` with the local fixture 
 
 ```text
 repo-flightcheck :: fixtures/sample-repo
-Score: 57/100
+Score: 59/100
 Stack: generic
 
 WARN  README guidance              README exists but is missing clear installation or usage guidance.
@@ -86,6 +87,7 @@ WARN  Agent instructions           No AGENTS.md or equivalent agent guidance fou
 FAIL  Verification command         No reliable verification command detected.
 WARN  Build command                No build command detected for this generic repo.
 WARN  Lint command                 No lint command detected for this generic repo.
+PASS  Tool availability            No detected verification/build/lint commands require local tools.
 WARN  CI workflow                  No GitHub Actions workflow detected.
 WARN  CI verification              No CI workflow is available to run the verification command.
 PASS  Documented commands          No README or agent command references found to validate.
@@ -143,6 +145,7 @@ node bin/repo-flightcheck.js . --strict --threshold 80
 - Agent-instruction quality is checked by keyword signals, so unusual but valid guidance may need clearer headings.
 - Stack detection is intentionally shallow; JavaScript actions with `package.json` report as Node, while dependency-light composite actions can report as `github-action`.
 - Documented command validation is heuristic and only checks common package-manager, Make, Python test-runner, and stack test commands in README or agent guidance.
+- Tool availability checks the current `PATH`; CI containers, local shells, and Codex desktop sessions can legitimately differ.
 - Node CLI entrypoint validation checks local `package.json` `bin` targets for file presence, a Node shebang, and POSIX executability; Windows-only packaging may need a documented exception.
 - Python CLI entrypoint validation checks simple `pyproject.toml` `[project.scripts]` targets shaped as `module:function` in root or `src/` layouts; dynamic TOML, generated modules, or class-based callables may need a documented exception.
 - It inspects the working tree on disk, not remote GitHub settings like branch protection or repository visibility.

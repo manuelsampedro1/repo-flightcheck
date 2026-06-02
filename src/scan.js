@@ -52,6 +52,34 @@ function normalizeCommand(command) {
   return command.trim().replace(/\s+/g, " ");
 }
 
+function commandExecutable(command) {
+  return normalizeCommand(command).split(" ")[0] ?? null;
+}
+
+function commandExistsOnPath(command) {
+  const pathValue = process.env.PATH ?? "";
+  if (!pathValue) {
+    return false;
+  }
+
+  const extensions = process.platform === "win32"
+    ? (process.env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD")
+      .split(";")
+      .filter(Boolean)
+      .map((extension) => extension.toLowerCase())
+    : [""];
+  const names = process.platform === "win32" && !path.extname(command)
+    ? extensions.map((extension) => `${command}${extension}`)
+    : [command];
+
+  return pathValue.split(path.delimiter).some((directory) => {
+    if (!directory) {
+      return false;
+    }
+    return names.some((name) => isExecutable(path.join(directory, name)));
+  });
+}
+
 function workflowContainsCommand(repoPath, workflowFiles, commandCandidates) {
   const candidates = commandCandidates.map(normalizeCommand).filter(Boolean);
   const matches = [];
@@ -195,6 +223,64 @@ function executableCommandStatus(repoPath, command, stack, packageJson, makeTarg
   }
 
   return true;
+}
+
+function toolAvailabilityStatus(commands, options = {}) {
+  const usageByTool = new Map();
+
+  for (const command of Object.values(commands).filter(Boolean)) {
+    const executable = commandExecutable(command);
+    if (!executable) {
+      continue;
+    }
+    const usages = usageByTool.get(executable) ?? [];
+    usages.push(command);
+    usageByTool.set(executable, usages);
+  }
+
+  const tools = Array.from(usageByTool.keys()).sort();
+  if (tools.length === 0) {
+    return {
+      ok: true,
+      message: "No detected verification/build/lint commands require local tools.",
+      evidence: []
+    };
+  }
+
+  const commandExists = options.commandExists ?? commandExistsOnPath;
+  const missing = [];
+  const evidence = [];
+
+  for (const tool of tools) {
+    let available = false;
+    try {
+      available = Boolean(commandExists(tool));
+    } catch {
+      available = false;
+    }
+
+    if (available) {
+      evidence.push(`${tool}: available`);
+      continue;
+    }
+
+    missing.push(tool);
+    evidence.push(`${tool}: needed by ${usageByTool.get(tool).join(", ")}`);
+  }
+
+  if (missing.length > 0) {
+    return {
+      ok: false,
+      message: `Missing local tool${missing.length === 1 ? "" : "s"} for detected commands: ${missing.join(", ")}.`,
+      evidence
+    };
+  }
+
+  return {
+    ok: true,
+    message: `Required local tool${tools.length === 1 ? "" : "s"} available: ${tools.join(", ")}.`,
+    evidence
+  };
 }
 
 function hasReadmeGuidance(readmeText) {
@@ -712,7 +798,7 @@ export function buildAgentContract(report, threshold = DEFAULT_AGENT_CONTRACT_TH
   };
 }
 
-export function scanRepo(repoPath) {
+export function scanRepo(repoPath, options = {}) {
   const absolutePath = path.resolve(repoPath);
   const stats = fs.existsSync(absolutePath) ? fs.statSync(absolutePath) : null;
 
@@ -739,6 +825,7 @@ export function scanRepo(repoPath) {
   const verificationCandidates = verificationCommandCandidates(commands, packageJson);
   const ciVerification = ciVerificationStatus(absolutePath, workflowFiles, verificationCandidates);
   const documentedCommands = documentedCommandStatus(absolutePath, stack, packageJson);
+  const toolAvailability = toolAvailabilityStatus(commands, options);
   const nodeCliEntrypoint = nodeCliEntrypointStatus(absolutePath, packageJson);
   const pythonCliEntrypoint = pythonCliEntrypointStatus(absolutePath, readText(absolutePath, "pyproject.toml"));
 
@@ -813,6 +900,15 @@ export function scanRepo(repoPath) {
       message: commands.lint ? `Found a lint command: ${commands.lint}.` : `No lint command detected for this ${stack} repo.`,
       fix: "Add a lint or static-analysis command so style and obvious mistakes are caught before review.",
       evidence: commands.lint ? [commands.lint] : []
+    }),
+    makeCheck({
+      id: "tool-availability",
+      title: "Tool availability",
+      severity: "medium",
+      status: toolAvailability.ok ? "pass" : "warn",
+      message: toolAvailability.message,
+      fix: "Install the missing local tool or document an equivalent command that works in this environment.",
+      evidence: toolAvailability.evidence
     }),
     makeCheck({
       id: "ci-workflow",
