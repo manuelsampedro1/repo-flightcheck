@@ -599,8 +599,31 @@ test("validates remote reachability when requested", () => {
     `origin/main: ${currentHead(repoPath).slice(0, 12)}`
   ]);
   assert.equal(missing?.status, "warn");
-  assert.equal(missing?.message, "Origin remote is configured but could not be reached.");
+  assert.equal(missing?.message, "Origin remote repository was not found or is not accessible.");
   assert.deepEqual(missing?.evidence, ["https://example.com/example/demo.git", "ERROR: Repository not found."]);
+});
+
+test("classifies remote authentication failures when checked", () => {
+  const repoPath = writeRepo({
+    "README.md": "# Demo\n\n## Quickstart\nInstall it.\n\n## Usage\nRun it.\n"
+  });
+  initCleanGitRepo(repoPath);
+  git(repoPath, ["remote", "add", "origin", "git@github.com:example/private-demo.git"]);
+
+  const check = scanRepo(repoPath, {
+    checkRemote: true,
+    remoteExists: () => ({
+      ok: false,
+      message: "git@github.com: Permission denied (publickey).\nfatal: Could not read from remote repository."
+    })
+  }).checks.find((item) => item.id === "git-remote");
+
+  assert.equal(check?.status, "warn");
+  assert.equal(check?.message, "Origin remote requires authentication or the current Git identity does not have access.");
+  assert.deepEqual(check?.evidence, [
+    "git@github.com:example/private-demo.git",
+    "git@github.com: Permission denied (publickey). fatal: Could not read from remote repository."
+  ]);
 });
 
 test("warns when checked remote branch does not contain local HEAD", () => {

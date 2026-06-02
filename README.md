@@ -33,7 +33,7 @@ This CLI checks the basics that usually decide whether an agent session goes smo
 - Whether Node CLI `package.json` `bin` entrypoints point to executable Node scripts.
 - Whether Python CLI `pyproject.toml` `[project.scripts]` entrypoints point to existing modules and defined functions.
 - Git working-tree cleanliness before handing work to an agent.
-- Whether an `origin` Git remote exists, with optional reachability and published-HEAD validation for public proof.
+- Whether an `origin` Git remote exists, with optional reachability, missing-repository, permission, and published-HEAD validation for public proof.
 - Tracked `.env` files and whether `.env` is ignored.
 - Example or fixture material that makes the repo feel real.
 - A compact agent-readiness contract for tools that need blockers, recommendations, and commands without parsing the full report.
@@ -157,6 +157,6 @@ node bin/repo-flightcheck.js . --strict --threshold 80
 - Remote reachability and published-HEAD checks only run when `--check-remote` is passed because they can require network access or GitHub authentication.
 - Node CLI entrypoint validation checks local `package.json` `bin` targets for file presence, a Node shebang, and POSIX executability; Windows-only packaging may need a documented exception.
 - Python CLI entrypoint validation checks simple `pyproject.toml` `[project.scripts]` targets shaped as `module:function` in root or `src/` layouts; dynamic TOML, generated modules, or class-based callables may need a documented exception.
-- It checks whether `origin` exists locally and, with `--check-remote`, whether Git can reach it and whether local `HEAD` matches the current branch on `origin`; it does not inspect GitHub branch protection or repository visibility settings.
+- It checks whether `origin` exists locally and, with `--check-remote`, whether Git can reach it, whether common missing-repository or permission failures are visible, and whether local `HEAD` matches the current branch on `origin`; it does not inspect GitHub branch protection or repository visibility settings.
 - The working-tree check uses local Git status. A dirty parent repo can affect scans of subdirectories inside that repo.
 - The agent-readiness contract is a compact view of the same heuristic checks, not a substitute for review or domain-specific acceptance criteria.

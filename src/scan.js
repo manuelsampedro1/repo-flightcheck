@@ -523,9 +523,10 @@ function gitRemoteStatus(repoPath, options = {}) {
   }
 
   if (!result?.ok) {
+    const failure = classifyRemoteFailure(result?.message);
     return {
       ok: false,
-      message: "Origin remote is configured but could not be reached.",
+      message: failure?.message ?? "Origin remote is configured but could not be reached.",
       evidence: [sanitizedUrl, sanitizeRemoteText(result?.message ?? "Remote check failed.")]
     };
   }
@@ -600,6 +601,29 @@ function remoteReachable(repoPath, remoteName) {
       message
     };
   }
+}
+
+function classifyRemoteFailure(message) {
+  const text = String(message ?? "").toLowerCase();
+  if (!text) {
+    return null;
+  }
+  if (text.includes("repository not found")) {
+    return {
+      message: "Origin remote repository was not found or is not accessible."
+    };
+  }
+  if (
+    text.includes("permission denied")
+    || text.includes("authentication failed")
+    || text.includes("could not read username")
+    || text.includes("please make sure you have the correct access rights")
+  ) {
+    return {
+      message: "Origin remote requires authentication or the current Git identity does not have access."
+    };
+  }
+  return null;
 }
 
 function currentGitBranch(repoPath) {
