@@ -184,6 +184,42 @@ test("passes when documented commands match package scripts and make targets", (
   assert.ok(check?.evidence.includes("AGENTS.md: npm run lint"));
 });
 
+test("detects standard-library Python unittest suites", () => {
+  const repoPath = writeRepo({
+    "README.md": "# Demo\n\n## Quickstart\nInstall with pip.\n\n## Usage\nRun python -m unittest discover -s tests.\n",
+    "LICENSE": "MIT",
+    ".gitignore": ".env\n",
+    "AGENTS.md": "# Agent Guide\n\n## Goal\nShip the demo.\n\n## Rules\nPrefer small changes.\n\n## Verification\nRun python3 -m unittest discover -s tests.\n",
+    "pyproject.toml": "[build-system]\nrequires = [\"setuptools>=77\"]\n\n[project]\nname = \"demo\"\nversion = \"0.1.0\"\n",
+    ".github/workflows/ci.yml": "name: ci\njobs:\n  test:\n    steps:\n      - run: python3 -m unittest discover -s tests\n",
+    "tests/test_cli.py": "import unittest\n\nclass DemoTest(unittest.TestCase):\n    def test_demo(self):\n        self.assertTrue(True)\n"
+  });
+
+  const report = scanRepo(repoPath);
+
+  assert.equal(report.stack, "python");
+  assert.equal(report.commands.test, "python -m unittest discover -s tests");
+  assert.equal(report.checks.find((item) => item.id === "verification-command")?.status, "pass");
+  assert.equal(report.checks.find((item) => item.id === "ci-verification")?.status, "pass");
+  assert.equal(report.checks.find((item) => item.id === "documented-commands")?.status, "pass");
+});
+
+test("warns when documented unittest commands point at a missing start directory", () => {
+  const repoPath = writeRepo({
+    "README.md": "# Demo\n\n## Quickstart\nInstall with pip.\n\n## Usage\nRun python3 -m unittest discover -s missing.\n",
+    "LICENSE": "MIT",
+    ".gitignore": ".env\n",
+    "pyproject.toml": "[project]\nname = \"demo\"\nversion = \"0.1.0\"\n",
+    "tests/test_cli.py": "import unittest\n\nclass DemoTest(unittest.TestCase):\n    def test_demo(self):\n        self.assertTrue(True)\n"
+  });
+
+  const report = scanRepo(repoPath);
+  const check = report.checks.find((item) => item.id === "documented-commands");
+
+  assert.equal(check?.status, "warn");
+  assert.deepEqual(check?.evidence, ["README.md: python3 -m unittest discover -s missing"]);
+});
+
 test("passes a clean git working tree", () => {
   const repoPath = writeRepo({
     "README.md": "# Demo\n\n## Quickstart\nInstall it.\n\n## Usage\nRun it.\n",

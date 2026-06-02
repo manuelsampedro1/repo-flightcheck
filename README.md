@@ -24,6 +24,7 @@ This CLI checks the basics that usually decide whether an agent session goes smo
 - Agent instructions like `AGENTS.md` or `CLAUDE.md`, including goal, constraints, and verification guidance.
 - Verification commands from `package.json`, `Makefile`, Python config, Rust, or Swift packages.
 - Build and lint coverage where the stack implies they should exist.
+- Python standard-library `unittest` suites under `tests/` when no third-party runner is configured.
 - GitHub Actions workflows.
 - Whether CI appears to run the same verification command expected locally.
 - Whether documented README or agent commands map to actual scripts, Make targets, or stack commands.
@@ -127,6 +128,6 @@ node bin/repo-flightcheck.js . --strict --threshold 80
 - It uses heuristics, not full semantic parsing.
 - Some repos intentionally skip build or lint steps; those show up as warnings, not always failures.
 - Agent-instruction quality is checked by keyword signals, so unusual but valid guidance may need clearer headings.
-- Documented command validation is heuristic and only checks common package-manager, Make, and stack test commands in README or agent guidance.
+- Documented command validation is heuristic and only checks common package-manager, Make, Python test-runner, and stack test commands in README or agent guidance.
 - It inspects the working tree on disk, not remote GitHub settings like branch protection or repository visibility.
 - The working-tree check uses local Git status. A dirty parent repo can affect scans of subdirectories inside that repo.

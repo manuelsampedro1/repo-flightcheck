@@ -19,6 +19,14 @@ function exists(repoPath, relativePath) {
   return fs.existsSync(path.join(repoPath, relativePath));
 }
 
+function isDirectory(repoPath, relativePath) {
+  try {
+    return fs.statSync(path.join(repoPath, relativePath)).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
 function readText(repoPath, relativePath) {
   try {
     return fs.readFileSync(path.join(repoPath, relativePath), "utf8");
@@ -86,12 +94,37 @@ function parseMakeTargets(repoPath) {
   return Array.from(content.matchAll(/^([a-zA-Z0-9._-]+):/gm), ([, target]) => target);
 }
 
+function hasPythonUnittestTests(repoPath) {
+  const testsDir = path.join(repoPath, "tests");
+  if (!fs.existsSync(testsDir)) {
+    return false;
+  }
+
+  const queue = [testsDir];
+  while (queue.length > 0) {
+    const current = queue.pop();
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      const fullPath = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        queue.push(fullPath);
+        continue;
+      }
+      if (entry.isFile() && /^test.*\.py$/.test(entry.name)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
 function extractDocumentedCommands(text) {
   const commands = new Set();
   const patterns = [
     /\bnpm\s+(?:run\s+)?[a-zA-Z0-9:_-]+\b/g,
     /\bnode\s+--test\b/g,
     /\bmake\s+[a-zA-Z0-9._-]+\b/g,
+    /\b(?:python3?|python)\s+-m\s+unittest(?:\s+discover(?:\s+-s\s+[^\s`'",.;:!?]+)?(?:\s+-p\s+[^\s`'",.;:!?]+)?)?/g,
     /\b(?:python3?|python)\s+-m\s+pytest\b/g,
     /\bpytest\b/g,
     /\bcargo\s+(?:test|build|clippy)\b/g,
@@ -141,6 +174,15 @@ function executableCommandStatus(repoPath, command, stack, packageJson, makeTarg
     return stack === "python" || exists(repoPath, "pyproject.toml") || exists(repoPath, "requirements.txt");
   }
 
+  const unittestMatch = normalized.match(/^(?:python3?|python) -m unittest(?: discover(?: -s ([^\s]+))?(?: -p ([^\s]+))?)?$/);
+  if (unittestMatch) {
+    const startDir = unittestMatch[1];
+    if (startDir) {
+      return isDirectory(repoPath, startDir);
+    }
+    return stack === "python" || exists(repoPath, "pyproject.toml") || exists(repoPath, "requirements.txt");
+  }
+
   if (["cargo test", "cargo build", "cargo clippy"].includes(normalized)) {
     return exists(repoPath, "Cargo.toml");
   }
@@ -164,6 +206,7 @@ function detectCommands(repoPath, stack, packageJson) {
   const scripts = packageJson?.scripts ?? {};
   const makeTargets = parseMakeTargets(repoPath);
   const pyproject = readText(repoPath, "pyproject.toml");
+  const hasUnittestTests = hasPythonUnittestTests(repoPath);
 
   const commands = {
     test: null,
@@ -184,6 +227,7 @@ function detectCommands(repoPath, stack, packageJson) {
 
   if (stack === "python") {
     if (!commands.test && /(pytest|tool\.pytest|tool\.coverage)/.test(pyproject)) commands.test = "pytest";
+    if (!commands.test && hasUnittestTests) commands.test = "python -m unittest discover -s tests";
     if (!commands.lint && /(ruff|flake8|pylint)/.test(pyproject)) commands.lint = "python -m ruff check .";
     if (!commands.build && /(build-system|\[project\])/.test(pyproject)) commands.build = "python -m build";
   }
@@ -215,6 +259,9 @@ function verificationCommandCandidates(commands, packageJson) {
   }
   if (testScript) {
     candidates.push(testScript);
+  }
+  if (commands.test.startsWith("python -m unittest")) {
+    candidates.push(commands.test.replace(/^python /, "python3 "));
   }
 
   return Array.from(new Set(candidates));
