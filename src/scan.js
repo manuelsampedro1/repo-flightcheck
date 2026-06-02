@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 
 const AGENT_FILES = ["AGENTS.md", "CLAUDE.md", "GEMINI.md", "CURSOR.md"];
 const README_FILES = ["README.md", "readme.md"];
@@ -158,6 +159,54 @@ function envIsIgnored(repoPath) {
   return /^\.env(\..*)?$/m.test(content) || /^\.env$/m.test(content);
 }
 
+function workingTreeStatus(repoPath) {
+  try {
+    execFileSync("git", ["-C", repoPath, "rev-parse", "--is-inside-work-tree"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+  } catch {
+    return {
+      ok: false,
+      message: "Path is not a Git working tree, so pre-existing changes cannot be checked.",
+      evidence: []
+    };
+  }
+
+  let output;
+  try {
+    output = execFileSync("git", ["-C", repoPath, "status", "--porcelain", "--untracked-files=all"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+  } catch {
+    return {
+      ok: false,
+      message: "Git working tree exists, but status could not be read.",
+      evidence: []
+    };
+  }
+  const entries = output.split("\n").filter(Boolean);
+
+  if (entries.length === 0) {
+    return {
+      ok: true,
+      message: "Git working tree is clean.",
+      evidence: ["git status --porcelain"]
+    };
+  }
+
+  const preview = entries.slice(0, 8);
+  const omitted = entries.length - preview.length;
+  return {
+    ok: false,
+    message: omitted > 0
+      ? `Working tree has ${entries.length} changed paths; showing first ${preview.length}.`
+      : `Working tree has ${entries.length} changed path${entries.length === 1 ? "" : "s"}.`,
+    evidence: omitted > 0 ? [...preview, `... ${omitted} more`] : preview
+  };
+}
+
 function packageMetadataStatus(packageJson) {
   if (!packageJson) {
     return {
@@ -223,6 +272,7 @@ export function scanRepo(repoPath) {
   const exampleMaterial = findExampleMaterial(absolutePath);
   const envFiles = trackedEnvFiles(absolutePath);
   const envIgnored = envIsIgnored(absolutePath);
+  const workingTree = workingTreeStatus(absolutePath);
   const pkgStatus = packageMetadataStatus(packageJson);
 
   const checks = [
@@ -307,6 +357,15 @@ export function scanRepo(repoPath) {
         : "No GitHub Actions workflow detected.",
       fix: "Add a small CI workflow that runs the same verification command you expect contributors to use locally.",
       evidence: workflowFiles
+    }),
+    makeCheck({
+      id: "working-tree",
+      title: "Working tree",
+      severity: "high",
+      status: workingTree.ok ? "pass" : "warn",
+      message: workingTree.message,
+      fix: "Start agent work from a clean Git state, or explicitly document the existing staged, unstaged, and untracked changes.",
+      evidence: workingTree.evidence
     }),
     makeCheck({
       id: "secret-hygiene",
