@@ -14,6 +14,8 @@ const SCORE_WEIGHTS = {
   medium: 8,
   low: 4
 };
+const DEFAULT_AGENT_CONTRACT_THRESHOLD = 75;
+const REQUIRED_AGENT_SEVERITIES = new Set(["critical", "high"]);
 
 function exists(repoPath, relativePath) {
   return fs.existsSync(path.join(repoPath, relativePath));
@@ -499,6 +501,44 @@ function makeCheck({ id, title, severity, status, message, fix, evidence }) {
   };
 }
 
+function contractCheckItem(check) {
+  return {
+    id: check.id,
+    title: check.title,
+    severity: check.severity,
+    status: check.status,
+    message: check.message,
+    fix: check.fix,
+    evidence: check.evidence
+  };
+}
+
+export function buildAgentContract(report, threshold = DEFAULT_AGENT_CONTRACT_THRESHOLD) {
+  const unresolved = report.checks.filter((check) => check.status !== "pass");
+  const requiredBeforeAgent = unresolved
+    .filter((check) => REQUIRED_AGENT_SEVERITIES.has(check.severity))
+    .map(contractCheckItem);
+  const recommendedBeforeAgent = unresolved
+    .filter((check) => !REQUIRED_AGENT_SEVERITIES.has(check.severity))
+    .map(contractCheckItem);
+
+  return {
+    schemaVersion: "repo-flightcheck.agent-contract.v1",
+    repoPath: report.repoPath,
+    stack: report.stack,
+    ready: report.summary.score >= threshold
+      && report.summary.criticalFailures === 0
+      && requiredBeforeAgent.length === 0,
+    threshold,
+    score: report.summary.score,
+    criticalFailures: report.summary.criticalFailures,
+    commands: report.commands,
+    requiredBeforeAgent,
+    recommendedBeforeAgent,
+    nextFixes: report.nextFixes
+  };
+}
+
 export function scanRepo(repoPath) {
   const absolutePath = path.resolve(repoPath);
   const stats = fs.existsSync(absolutePath) ? fs.statSync(absolutePath) : null;
@@ -690,13 +730,18 @@ export function scanRepo(repoPath) {
     .slice(0, 3)
     .map((check) => `${check.title}: ${check.fix}`);
 
-  return {
+  const report = {
     repoPath: absolutePath,
     stack,
     commands,
     summary,
     checks,
     nextFixes
+  };
+
+  return {
+    ...report,
+    agentContract: buildAgentContract(report)
   };
 }
 

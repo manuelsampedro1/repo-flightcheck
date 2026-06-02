@@ -32,6 +32,7 @@ This CLI checks the basics that usually decide whether an agent session goes smo
 - Git working-tree cleanliness before handing work to an agent.
 - Tracked `.env` files and whether `.env` is ignored.
 - Example or fixture material that makes the repo feel real.
+- A compact agent-readiness contract for tools that need blockers, recommendations, and commands without parsing the full report.
 
 ## Quickstart
 
@@ -53,6 +54,12 @@ Machine-readable output:
 
 ```bash
 node bin/repo-flightcheck.js . --json
+```
+
+Compact readiness contract for agent handoff:
+
+```bash
+node bin/repo-flightcheck.js . --contract --threshold 80
 ```
 
 Strict mode for CI:
@@ -100,6 +107,7 @@ Next fixes:
 
 - Before opening a repo to Codex or Claude Code.
 - Before inviting collaborators to review an AI-assisted codebase.
+- As a machine-readable readiness contract before importing work into a run ledger or review packet.
 - Inside CI as a guardrail for internal templates.
 - As a quick audit for client repos that feel hard to onboard.
 
@@ -133,3 +141,4 @@ node bin/repo-flightcheck.js . --strict --threshold 80
 - Documented command validation is heuristic and only checks common package-manager, Make, Python test-runner, and stack test commands in README or agent guidance.
 - It inspects the working tree on disk, not remote GitHub settings like branch protection or repository visibility.
 - The working-tree check uses local Git status. A dirty parent repo can affect scans of subdirectories inside that repo.
+- The agent-readiness contract is a compact view of the same heuristic checks, not a substitute for review or domain-specific acceptance criteria.

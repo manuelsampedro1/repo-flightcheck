@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 
-import { scanRepo } from "../src/scan.js";
+import { buildAgentContract, scanRepo } from "../src/scan.js";
 
 function writeRepo(files) {
   const repoPath = fs.mkdtempSync(path.join(os.tmpdir(), "repo-flightcheck-"));
@@ -71,6 +71,86 @@ test("scores a healthy node repo well", () => {
   assert.equal(report.checks.find((check) => check.id === "verification-command")?.status, "pass");
   assert.equal(report.checks.find((check) => check.id === "ci-verification")?.status, "pass");
   assert.equal(report.checks.find((check) => check.id === "documented-commands")?.status, "pass");
+});
+
+test("builds an agent contract for a ready repo", () => {
+  const repoPath = writeRepo({
+    "README.md": "# Demo\n\n## Quickstart\nInstall it.\n\n## Usage\nRun it.\n",
+    "LICENSE": "MIT",
+    ".gitignore": ".env\nnode_modules\n",
+    "AGENTS.md": "# Agent Guide\n\n## Goal\nShip the demo.\n\n## Rules\nPrefer small changes.\n\n## Verification\nRun npm test.\n",
+    "package.json": JSON.stringify({
+      name: "demo",
+      description: "demo repo",
+      license: "MIT",
+      scripts: {
+        test: "node --test",
+        build: "node build.js",
+        lint: "node lint.js"
+      }
+    }),
+    ".github/workflows/ci.yml": "name: ci\njobs:\n  test:\n    steps:\n      - run: node --test\n",
+    "fixtures/sample.txt": "hello"
+  });
+  initCleanGitRepo(repoPath);
+
+  const report = scanRepo(repoPath);
+  const contract = buildAgentContract(report, 80);
+
+  assert.equal(report.agentContract.schemaVersion, "repo-flightcheck.agent-contract.v1");
+  assert.equal(contract.ready, true);
+  assert.equal(contract.threshold, 80);
+  assert.equal(contract.commands.test, "npm test");
+  assert.equal(contract.requiredBeforeAgent.length, 0);
+  assert.equal(contract.recommendedBeforeAgent.length, 0);
+});
+
+test("agent contract separates blockers from recommendations", () => {
+  const repoPath = writeRepo({
+    "README.md": "# Broken\n\ntext only\n",
+    ".env": "API_KEY=shh\n"
+  });
+
+  const contract = buildAgentContract(scanRepo(repoPath), 80);
+
+  assert.equal(contract.ready, false);
+  assert.ok(contract.requiredBeforeAgent.some((item) => item.id === "verification-command"));
+  assert.ok(contract.requiredBeforeAgent.some((item) => item.id === "secret-hygiene"));
+  assert.ok(contract.recommendedBeforeAgent.some((item) => item.id === "license"));
+});
+
+test("prints a compact contract from the CLI", () => {
+  const repoPath = writeRepo({
+    "README.md": "# Demo\n\n## Quickstart\nInstall it.\n\n## Usage\nRun it.\n",
+    "LICENSE": "MIT",
+    ".gitignore": ".env\nnode_modules\n",
+    "AGENTS.md": "# Agent Guide\n\n## Goal\nShip the demo.\n\n## Rules\nPrefer small changes.\n\n## Verification\nRun npm test.\n",
+    "package.json": JSON.stringify({
+      name: "demo",
+      description: "demo repo",
+      license: "MIT",
+      scripts: {
+        test: "node --test",
+        build: "node build.js",
+        lint: "node lint.js"
+      }
+    }),
+    ".github/workflows/ci.yml": "name: ci\njobs:\n  test:\n    steps:\n      - run: node --test\n",
+    "fixtures/sample.txt": "hello"
+  });
+  initCleanGitRepo(repoPath);
+
+  const output = execFileSync(
+    process.execPath,
+    [path.resolve("bin/repo-flightcheck.js"), repoPath, "--contract", "--threshold", "90"],
+    { encoding: "utf8" }
+  );
+  const contract = JSON.parse(output);
+
+  assert.equal(contract.schemaVersion, "repo-flightcheck.agent-contract.v1");
+  assert.equal(contract.ready, true);
+  assert.equal(contract.threshold, 90);
+  assert.equal(contract.commands.test, "npm test");
 });
 
 test("warns when agent instructions are too thin", () => {
