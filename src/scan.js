@@ -72,6 +72,7 @@ function detectStack(repoPath) {
   if (exists(repoPath, "Package.swift") || fs.readdirSync(repoPath).some((name) => name.endsWith(".xcodeproj"))) {
     return "swift";
   }
+  if (exists(repoPath, "action.yml") || exists(repoPath, "action.yaml")) return "github-action";
   return "generic";
 }
 

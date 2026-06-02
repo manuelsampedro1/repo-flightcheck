@@ -204,6 +204,31 @@ test("detects standard-library Python unittest suites", () => {
   assert.equal(report.checks.find((item) => item.id === "documented-commands")?.status, "pass");
 });
 
+test("detects dependency-light GitHub Action repos with Make verification", () => {
+  const repoPath = writeRepo({
+    "README.md": "# Deploy Gate\n\n## Quickstart\nNo package install is required.\n\n## Usage\nRun make test, make build, and make lint before release.\n",
+    "LICENSE": "MIT",
+    ".gitignore": ".env\n",
+    "AGENTS.md": "# Agent Guide\n\n## Purpose\nMaintain a composite action.\n\n## Constraints\nPreserve fail-closed behavior.\n\n## Verification\nRun make test.\n",
+    "Makefile": "test:\n\tpython3 scripts/validate_action.py\n\nbuild:\n\tpython3 scripts/validate_docs.py\n\nlint:\n\tpython3 -m py_compile scripts/validate_action.py scripts/validate_docs.py\n",
+    "action.yml": "name: Deploy Gate\nruns:\n  using: composite\n  steps:\n    - shell: bash\n      run: echo ok\n",
+    ".github/workflows/ci.yml": "name: ci\njobs:\n  verify:\n    steps:\n      - run: make test\n      - run: make build\n      - run: make lint\n",
+    "examples/workflow.yml": "name: Deploy Gate\n",
+    "scripts/validate_action.py": "print('ok')\n",
+    "scripts/validate_docs.py": "print('ok')\n"
+  });
+
+  const report = scanRepo(repoPath);
+
+  assert.equal(report.stack, "github-action");
+  assert.equal(report.commands.test, "make test");
+  assert.equal(report.commands.build, "make build");
+  assert.equal(report.commands.lint, "make lint");
+  assert.equal(report.checks.find((item) => item.id === "verification-command")?.status, "pass");
+  assert.equal(report.checks.find((item) => item.id === "ci-verification")?.status, "pass");
+  assert.equal(report.checks.find((item) => item.id === "documented-commands")?.status, "pass");
+});
+
 test("warns when documented unittest commands point at a missing start directory", () => {
   const repoPath = writeRepo({
     "README.md": "# Demo\n\n## Quickstart\nInstall with pip.\n\n## Usage\nRun python3 -m unittest discover -s missing.\n",
