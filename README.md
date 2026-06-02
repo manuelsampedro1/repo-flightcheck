@@ -58,21 +58,29 @@ node bin/repo-flightcheck.js . --strict --threshold 80
 
 ## Example output
 
-```text
-repo-flightcheck :: /work/repo
-Score: 86/100
-Stack: node
+From `node bin/repo-flightcheck.js fixtures/sample-repo` with the local fixture path shortened:
 
-PASS  README guidance               README.md exists and includes installation and usage guidance.
-PASS  Agent instructions            Found AGENTS.md.
-PASS  Verification command          Found a test command: npm test
-PASS  CI workflow                   Found 1 workflow file under .github/workflows.
-WARN  Lint command                  No lint command detected for this Node repo.
-FAIL  Secret hygiene                Found tracked env files: .env
+```text
+repo-flightcheck :: fixtures/sample-repo
+Score: 44/100
+Stack: generic
+
+WARN  README guidance              README exists but is missing clear installation or usage guidance.
+WARN  License                      No license file found.
+WARN  Gitignore                    No .gitignore found.
+WARN  Agent instructions           No AGENTS.md or equivalent agent guidance found.
+FAIL  Verification command         No reliable verification command detected.
+WARN  Build command                No build command detected for this generic repo.
+WARN  Lint command                 No lint command detected for this generic repo.
+WARN  CI workflow                  No GitHub Actions workflow detected.
+WARN  Secret hygiene               No tracked env files found, but .env is not explicitly ignored.
+WARN  Examples or fixtures         No examples, demo, or fixtures folder found.
+PASS  Package metadata             No package.json present, so package metadata is not required.
 
 Next fixes:
-1. Remove tracked env files and rotate any leaked secrets.
-2. Add a lint command that agents can run before committing.
+1. README guidance: Add a README with setup, usage, and a short explanation of why the project matters.
+2. Verification command: Expose one obvious test or check command that an agent can run before finishing work.
+3. Secret hygiene: Ignore .env files and keep secrets out of version control. If anything sensitive was committed, rotate it.
 ```
 
 ## Exit codes
