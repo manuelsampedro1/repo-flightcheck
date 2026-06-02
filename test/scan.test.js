@@ -41,6 +41,11 @@ function initCleanGitRepo(repoPath) {
     ],
     { stdio: "ignore" }
   );
+  git(repoPath, ["branch", "-M", "main"]);
+}
+
+function currentHead(repoPath) {
+  return execFileSync("git", ["-C", repoPath, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
 }
 
 test("scores a healthy node repo well", () => {
@@ -576,7 +581,8 @@ test("validates remote reachability when requested", () => {
 
   const reachable = scanRepo(repoPath, {
     checkRemote: true,
-    remoteExists: () => ({ ok: true })
+    remoteExists: () => ({ ok: true }),
+    remoteHead: () => ({ ok: true, sha: currentHead(repoPath) })
   }).checks.find((item) => item.id === "git-remote");
   const missing = scanRepo(repoPath, {
     checkRemote: true,
@@ -587,11 +593,54 @@ test("validates remote reachability when requested", () => {
   }).checks.find((item) => item.id === "git-remote");
 
   assert.equal(reachable?.status, "pass");
-  assert.equal(reachable?.message, "Origin remote is reachable.");
-  assert.deepEqual(reachable?.evidence, ["https://example.com/example/demo.git"]);
+  assert.equal(reachable?.message, "Origin remote is reachable and local HEAD is published on origin/main.");
+  assert.deepEqual(reachable?.evidence, [
+    "https://example.com/example/demo.git",
+    `origin/main: ${currentHead(repoPath).slice(0, 12)}`
+  ]);
   assert.equal(missing?.status, "warn");
   assert.equal(missing?.message, "Origin remote is configured but could not be reached.");
   assert.deepEqual(missing?.evidence, ["https://example.com/example/demo.git", "ERROR: Repository not found."]);
+});
+
+test("warns when checked remote branch does not contain local HEAD", () => {
+  const repoPath = writeRepo({
+    "README.md": "# Demo\n\n## Quickstart\nInstall it.\n\n## Usage\nRun it.\n"
+  });
+  const remotePath = fs.mkdtempSync(path.join(os.tmpdir(), "repo-flightcheck-remote-"));
+  initCleanGitRepo(repoPath);
+  execFileSync("git", ["init", "--bare", "-q", remotePath], { stdio: "ignore" });
+  git(repoPath, ["remote", "add", "origin", remotePath]);
+  git(repoPath, ["push", "-u", "origin", "main"]);
+
+  const published = scanRepo(repoPath, { checkRemote: true }).checks.find((item) => item.id === "git-remote");
+  assert.equal(published?.status, "pass");
+  assert.equal(published?.message, "Origin remote is reachable and local HEAD is published on origin/main.");
+
+  fs.appendFileSync(path.join(repoPath, "README.md"), "\nLocal follow-up.\n");
+  git(repoPath, ["add", "README.md"]);
+  execFileSync(
+    "git",
+    [
+      "-C",
+      repoPath,
+      "-c",
+      "user.name=Repo Flightcheck Test",
+      "-c",
+      "user.email=repo-flightcheck@example.com",
+      "commit",
+      "-m",
+      "local follow-up"
+    ],
+    { stdio: "ignore" }
+  );
+
+  const stale = scanRepo(repoPath, { checkRemote: true }).checks.find((item) => item.id === "git-remote");
+
+  assert.equal(stale?.status, "warn");
+  assert.equal(stale?.message, "Origin remote is reachable, but local HEAD is not published on origin/main.");
+  assert.ok(stale?.evidence.some((entry) => entry.startsWith("local HEAD: ")));
+  assert.ok(stale?.evidence.some((entry) => entry.startsWith("origin/main: ")));
 });
 
 test("warns when a git working tree has pre-existing changes", () => {

@@ -511,6 +511,7 @@ function gitRemoteStatus(repoPath, options = {}) {
   }
 
   const remoteExists = options.remoteExists ?? remoteReachable;
+  const remoteHead = options.remoteHead ?? remoteBranchHead;
   let result;
   try {
     result = remoteExists(repoPath, "origin");
@@ -521,18 +522,66 @@ function gitRemoteStatus(repoPath, options = {}) {
     };
   }
 
-  if (result?.ok) {
+  if (!result?.ok) {
     return {
-      ok: true,
-      message: "Origin remote is reachable.",
+      ok: false,
+      message: "Origin remote is configured but could not be reached.",
+      evidence: [sanitizedUrl, sanitizeRemoteText(result?.message ?? "Remote check failed.")]
+    };
+  }
+
+  const branch = currentGitBranch(repoPath);
+  if (!branch) {
+    return {
+      ok: false,
+      message: "Origin remote is reachable, but local HEAD is detached.",
       evidence: [sanitizedUrl]
     };
   }
 
+  const localHead = currentGitHead(repoPath);
+  if (!localHead) {
+    return {
+      ok: false,
+      message: "Origin remote is reachable, but local HEAD could not be read.",
+      evidence: [sanitizedUrl, branch]
+    };
+  }
+
+  let remoteHeadResult;
+  try {
+    remoteHeadResult = remoteHead(repoPath, "origin", branch);
+  } catch (error) {
+    remoteHeadResult = {
+      ok: false,
+      message: error?.message ?? "Remote branch check failed."
+    };
+  }
+
+  if (!remoteHeadResult?.ok) {
+    return {
+      ok: false,
+      message: `Origin remote is reachable, but origin/${branch} could not be read.`,
+      evidence: [sanitizedUrl, sanitizeRemoteText(remoteHeadResult?.message ?? "Remote branch check failed.")]
+    };
+  }
+
+  if (remoteHeadResult.sha !== localHead) {
+    return {
+      ok: false,
+      message: `Origin remote is reachable, but local HEAD is not published on origin/${branch}.`,
+      evidence: [
+        sanitizedUrl,
+        `local HEAD: ${shortSha(localHead)}`,
+        `origin/${branch}: ${shortSha(remoteHeadResult.sha)}`
+      ]
+    };
+  }
+
   return {
-    ok: false,
-    message: "Origin remote is configured but could not be reached.",
-    evidence: [sanitizedUrl, sanitizeRemoteText(result?.message ?? "Remote check failed.")]
+    ok: true,
+    message: `Origin remote is reachable and local HEAD is published on origin/${branch}.`,
+    evidence: [sanitizedUrl, `origin/${branch}: ${shortSha(localHead)}`]
   };
 }
 
@@ -551,6 +600,60 @@ function remoteReachable(repoPath, remoteName) {
       message
     };
   }
+}
+
+function currentGitBranch(repoPath) {
+  try {
+    const branch = execFileSync("git", ["-C", repoPath, "branch", "--show-current"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"]
+    }).trim();
+    return branch || null;
+  } catch {
+    return null;
+  }
+}
+
+function currentGitHead(repoPath) {
+  try {
+    return execFileSync("git", ["-C", repoPath, "rev-parse", "HEAD"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"]
+    }).trim();
+  } catch {
+    return null;
+  }
+}
+
+function remoteBranchHead(repoPath, remoteName, branch) {
+  try {
+    const output = execFileSync("git", ["-C", repoPath, "ls-remote", remoteName, `refs/heads/${branch}`], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: 10_000
+    }).trim();
+    const [sha] = output.split(/\s+/);
+    if (!sha) {
+      return {
+        ok: false,
+        message: `Remote branch ${branch} was not found.`
+      };
+    }
+    return {
+      ok: true,
+      sha
+    };
+  } catch (error) {
+    const message = [error.stderr, error.stdout, error.message].filter(Boolean).join("\n").trim();
+    return {
+      ok: false,
+      message
+    };
+  }
+}
+
+function shortSha(sha) {
+  return String(sha ?? "").slice(0, 12);
 }
 
 function sanitizeRemoteUrl(remoteUrl) {

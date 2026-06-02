@@ -10,7 +10,7 @@ Options:
   --json            Print JSON instead of the text report.
   --contract        Print a compact agent-readiness contract as JSON.
   --strict          Exit with code 1 if the score is below threshold or any critical check fails.
-  --check-remote    Validate that the configured origin remote is reachable.
+  --check-remote    Validate that origin is reachable and local HEAD is published.
   --threshold <n>   Minimum score required by strict mode and contract readiness. Default: 75.
   --help            Show this help text.
 `);
