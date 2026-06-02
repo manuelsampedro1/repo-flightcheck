@@ -413,6 +413,83 @@ function packageMetadataStatus(packageJson) {
   };
 }
 
+function packageBinEntries(packageJson) {
+  if (!packageJson?.bin) {
+    return [];
+  }
+
+  if (typeof packageJson.bin === "string") {
+    return [[packageJson.name ?? "package", packageJson.bin]];
+  }
+
+  if (typeof packageJson.bin === "object") {
+    return Object.entries(packageJson.bin)
+      .filter(([, target]) => typeof target === "string" && target.trim())
+      .map(([name, target]) => [name, target]);
+  }
+
+  return [];
+}
+
+function isExecutable(filePath) {
+  try {
+    return Boolean(fs.statSync(filePath).mode & 0o111);
+  } catch {
+    return false;
+  }
+}
+
+function nodeCliEntrypointStatus(repoPath, packageJson) {
+  const entries = packageBinEntries(packageJson);
+  if (entries.length === 0) {
+    return {
+      ok: true,
+      message: "No package.json bin entrypoints declared.",
+      evidence: []
+    };
+  }
+
+  const problems = [];
+  const evidence = [];
+
+  for (const [name, target] of entries) {
+    const relativeTarget = target.replace(/^\.?\//, "");
+    const fullPath = path.join(repoPath, relativeTarget);
+
+    if (!fs.existsSync(fullPath)) {
+      problems.push(`${name}: missing ${target}`);
+      continue;
+    }
+
+    const firstLine = readText(repoPath, relativeTarget).split("\n")[0] ?? "";
+    if (!/^#!.*\bnode\b/.test(firstLine)) {
+      problems.push(`${name}: ${target} is missing a Node shebang`);
+      continue;
+    }
+
+    if (!isExecutable(fullPath)) {
+      problems.push(`${name}: ${target} is not executable`);
+      continue;
+    }
+
+    evidence.push(`${name}: ${target}`);
+  }
+
+  if (problems.length > 0) {
+    return {
+      ok: false,
+      message: `Found ${problems.length} Node CLI entrypoint issue${problems.length === 1 ? "" : "s"}.`,
+      evidence: problems
+    };
+  }
+
+  return {
+    ok: true,
+    message: `Validated ${entries.length} Node CLI entrypoint${entries.length === 1 ? "" : "s"}.`,
+    evidence
+  };
+}
+
 function ciVerificationStatus(repoPath, workflowFiles, commandCandidates) {
   if (workflowFiles.length === 0) {
     return {
@@ -566,6 +643,7 @@ export function scanRepo(repoPath) {
   const verificationCandidates = verificationCommandCandidates(commands, packageJson);
   const ciVerification = ciVerificationStatus(absolutePath, workflowFiles, verificationCandidates);
   const documentedCommands = documentedCommandStatus(absolutePath, stack, packageJson);
+  const nodeCliEntrypoint = nodeCliEntrypointStatus(absolutePath, packageJson);
 
   const checks = [
     makeCheck({
@@ -707,6 +785,15 @@ export function scanRepo(repoPath) {
       message: pkgStatus.message,
       fix: "Fill in package metadata so the repo is easier to publish or consume.",
       evidence: packageJson ? ["package.json"] : []
+    }),
+    makeCheck({
+      id: "node-cli-entrypoint",
+      title: "Node CLI entrypoint",
+      severity: "medium",
+      status: nodeCliEntrypoint.ok ? "pass" : "warn",
+      message: nodeCliEntrypoint.message,
+      fix: "Make every package.json bin target point to an executable Node script with a shebang.",
+      evidence: nodeCliEntrypoint.evidence
     })
   ];
 

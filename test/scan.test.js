@@ -264,6 +264,72 @@ test("passes when documented commands match package scripts and make targets", (
   assert.ok(check?.evidence.includes("AGENTS.md: npm run lint"));
 });
 
+test("passes executable Node CLI bin entrypoints", () => {
+  const repoPath = writeRepo({
+    "README.md": "# Demo\n\n## Quickstart\nRun npm install.\n\n## Usage\nRun demo.\n",
+    "LICENSE": "MIT",
+    ".gitignore": ".env\n",
+    "AGENTS.md": "# Agent Guide\n\n## Goal\nShip the demo.\n\n## Rules\nPrefer small changes.\n\n## Verification\nRun npm test.\n",
+    "package.json": JSON.stringify({
+      name: "demo",
+      description: "demo repo",
+      license: "MIT",
+      bin: {
+        demo: "bin/demo.js"
+      },
+      scripts: {
+        test: "node --test"
+      }
+    }),
+    "bin/demo.js": "#!/usr/bin/env node\nconsole.log('demo');\n",
+    ".github/workflows/ci.yml": "name: ci\njobs:\n  test:\n    steps:\n      - run: node --test\n",
+    "fixtures/sample.txt": "hello"
+  });
+  fs.chmodSync(path.join(repoPath, "bin", "demo.js"), 0o755);
+
+  const report = scanRepo(repoPath);
+  const check = report.checks.find((item) => item.id === "node-cli-entrypoint");
+
+  assert.equal(check?.status, "pass");
+  assert.equal(check?.message, "Validated 1 Node CLI entrypoint.");
+  assert.deepEqual(check?.evidence, ["demo: bin/demo.js"]);
+});
+
+test("warns when Node CLI bin entrypoints are missing or not invokable", () => {
+  const repoPath = writeRepo({
+    "README.md": "# Demo\n\n## Quickstart\nRun npm install.\n\n## Usage\nRun demo.\n",
+    "LICENSE": "MIT",
+    ".gitignore": ".env\n",
+    "AGENTS.md": "# Agent Guide\n\n## Goal\nShip the demo.\n\n## Rules\nPrefer small changes.\n\n## Verification\nRun npm test.\n",
+    "package.json": JSON.stringify({
+      name: "demo",
+      description: "demo repo",
+      license: "MIT",
+      bin: {
+        demo: "bin/demo.js",
+        missing: "bin/missing.js",
+        noShebang: "bin/no-shebang.js"
+      },
+      scripts: {
+        test: "node --test"
+      }
+    }),
+    "bin/demo.js": "#!/usr/bin/env node\nconsole.log('demo');\n",
+    "bin/no-shebang.js": "console.log('demo');\n",
+    ".github/workflows/ci.yml": "name: ci\njobs:\n  test:\n    steps:\n      - run: node --test\n",
+    "fixtures/sample.txt": "hello"
+  });
+
+  const report = scanRepo(repoPath);
+  const check = report.checks.find((item) => item.id === "node-cli-entrypoint");
+
+  assert.equal(check?.status, "warn");
+  assert.match(check?.message ?? "", /3 Node CLI entrypoint issues/);
+  assert.ok(check?.evidence.includes("demo: bin/demo.js is not executable"));
+  assert.ok(check?.evidence.includes("missing: missing bin/missing.js"));
+  assert.ok(check?.evidence.includes("noShebang: bin/no-shebang.js is missing a Node shebang"));
+});
+
 test("detects standard-library Python unittest suites", () => {
   const repoPath = writeRepo({
     "README.md": "# Demo\n\n## Quickstart\nInstall with pip.\n\n## Usage\nRun python -m unittest discover -s tests.\n",
